@@ -29,17 +29,21 @@ functions:
       CALLBACK_URL: 
         Fn::Sub: 'https://#{ApiGatewayRestApi}.execute-api.#{AWS::Region}.amazonaws.com/${self:provider.stage}/${env:API_PATH}'
     events:
-    - http:
-        path: ${env:API_PATH}
-        integration: lambda
-        method: post
-        request:
-          template:
-            application/json: >
-              {
-                "x_trello_webhook": "$util.escapeJavaScript($input.params().header.get('X-Trello-Webhook'))",
-                "payload": "$util.base64Encode($input.body)"
-              }
+      - http:
+          path: ${env:API_PATH}
+          integration: lambda
+          method: head
+      - http:
+          path: ${env:API_PATH}
+          integration: lambda
+          method: post
+          request:
+            template:
+              application/json: >
+                {
+                  "x_trello_webhook": "$util.escapeJavaScript($input.params().header.get('X-Trello-Webhook'))",
+                  "payload": "$util.base64Encode($input.body)"
+                }
     tags:
       ManagedBy: "Serverless"
 
