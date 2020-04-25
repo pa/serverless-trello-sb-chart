@@ -20,9 +20,9 @@ functions:
     memorySize: 512
     timeout: 120
     environment:
-      BAMBOOHR_API_TOKEN_SSM_PARAMETER_KEY: ${ssm:/Serverless/BambooHR/ApiToken~true}
-      TRELLO_API_KEY_SSM_PARAMETER_KEY: ${ssm:/Serverless/Trello/ApiKey~true}
-      TRELLO_TOKEN_SSM_PARAMETER_KEY: ${ssm:/Serverless/Trello/Token~true}
+      BAMBOOHR_API_TOKEN_SSM_PARAMETER_KEY: '/Serverless/BambooHR/ApiToken'
+      TRELLO_API_KEY_SSM_PARAMETER_KEY: '/Serverless/Trello/ApiKey'
+      TRELLO_TOKEN_SSM_PARAMETER_KEY: '/Serverless/Trello/Token'
       TRELLO_ORGANIZATION_ID: ${env:TRELLO_ORGANIZATION_ID}
       POWERUP_NAME: ${env:POWERUP_NAME}
       BAMBOOHR_ORG_NAME: ${env:BAMBOOHR_ORG_NAME}
