@@ -5,6 +5,7 @@ import base64
 import json
 import boto3
 import requests
+from trello import TrelloClient
 
 # Get the SSM Parameter Keys
 try:
@@ -220,7 +221,7 @@ def success():
     return {"statusCode": 200}
 
 
-def lambda_handler(event, context):
+def trelloSprintBurndown(event, context):
     """
     Extracts Trello Webhook Payload information and automates Trello
     :param event: Event data from API Gateway contains Trello Webhook Payload
@@ -232,5 +233,13 @@ def lambda_handler(event, context):
     print(BAMBOOHR_API_TOKEN)
     print(CALLBACK_URL)
     print(POWERUP_NAME)
+
+    # Connect to Trello
+    client = TrelloClient(
+            api_key=TRELLO_API_KEY,
+            token=TRELLO_TOKEN
+    )
+
+    print(client.create_hook(CALLBACK_URL, TRELLO_ORGANIZATION_ID, "Trello Organiztion Webhook", TRELLO_TOKEN))
 
     return success()

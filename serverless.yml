@@ -15,7 +15,7 @@ provider:
 functions:
   trelloSprintBurndown:
     handler: handler.trelloSprintBurndown
-    # description: Creates Sprint Burndown Chart in Trello Board
+    description: Creates Sprint Burndown Chart in Trello Board
     runtime: python3.8
     memorySize: 512
     timeout: 120
