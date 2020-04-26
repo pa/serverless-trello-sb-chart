@@ -5,10 +5,9 @@ service: trello-sb-chart-automation
 
 provider:
   name: aws
-  runtime: python3.8
+  runtime: python3
   iamManagedPolicies:
     - 'arn:aws:iam::aws:policy/AmazonSSMReadOnlyAccess'
-    - 'arn:aws:iam::aws:policy/AWSCloudFormationReadOnlyAccess'
     - 'arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole'
     - 'arn:aws:iam::aws:policy/AWSLambdaExecute'
 
@@ -33,10 +32,12 @@ functions:
           path: ${env:API_PATH}
           integration: lambda
           method: head
+          async: true
       - http:
           path: ${env:API_PATH}
           integration: lambda
           method: post
+          async: true
           request:
             template:
               application/json: >
