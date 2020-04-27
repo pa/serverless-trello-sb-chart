@@ -69,16 +69,16 @@ BAMBOOHR_API_TOKEN = format(
         )['Parameter']['Value']
     )
 
-# Get Monitor Lists Method
-def get_monitor_lists(client, payload):
+# Get all Plugins/PowerUps from Board
+def get_plugins(client, board_id):
     """
-    Gets the lists that needs to be monitored
+    Gets Plugin/PowerUp data from the board
     :param client: Trello client Object
-    :param payload: Trello Webhook Payload from API Gateway
-    :return: returns webhook creation response
+    :param board_id: The ID of the Board
+    :return: returns Plugin/PowerUp Value
     """
     return client.fetch_json(
-        f"boards/{payload['action']['data']['board']['id']}/pluginData",
+        f"boards/{board_id}/pluginData",
         http_method="GET",
         headers = {
                 "Accept": "application/json"
@@ -87,6 +87,42 @@ def get_monitor_lists(client, payload):
             'name': POWERUP_NAME
         }
     )
+
+
+# Get all Enabled PowerUps from the Board
+def enabled_powerups(client, board_id):
+    """
+    Gets Enabled Plugin/PowerUp from the board
+    :param client: Trello client Object
+    :param board_id: The ID of the Board
+    :return: returns Enabled Plugin/PowerUp Data
+    """
+    return client.fetch_json(
+        f"boards/{board_id}/boardPlugins",
+        http_method="GET",
+        headers = {
+                "Accept": "application/json"
+            }
+    )
+
+
+# Get PowerUp Data that is required for monitoring the Board
+def get_powerup_data(board_id):
+    """
+    Get PowerUp Data from the board
+    :param board_id: The ID of the Board
+    :return: returns PowerUp Data for monitoring boards
+    """
+    # Get Enabled PowerUps in the Board
+    enabled_powerups_list = []
+    enabled_powerups_data = enabled_powerups(client, board_id)
+    [enabled_powerups_list.append(enabled_powerup['idPlugin']) for enabled_powerup in enabled_powerups_data]
+
+    # Check if our PowerUp Enabled or Not
+    plugins_data = get_plugins(client, board_id)
+    for plugin_data in plugins_data:
+        if plugin_data['idPlugin'] in enabled_powerups_list:
+            return plugin_data['value']
 
 
 # Create Webhook for Existing Organization Boards
@@ -240,6 +276,30 @@ def trelloSprintBurndown(event, context):
             token=TRELLO_TOKEN
     )
 
-    print(client.create_hook(CALLBACK_URL, TRELLO_ORGANIZATION_ID, "Trello Organiztion Webhook", TRELLO_TOKEN))
+    print(type(event))
+    print(event)
 
-    return success()
+    try:
+        event['payload'] = base64.b64decode(event['payload'])
+        print(event['payload'])
+    except Exception as e:
+        print(f' {e}: Error no payload data')
+        pass
+
+    is_create_org_webhook = False
+
+    try:
+        for webhook in client.list_hooks(TRELLO_TOKEN):
+            # Check is webhook created for Organization ID
+            if webhook.callback_url == CALLBACK_URL and webhook.id_modal == TRELLO_ORGANIZATION_ID:
+                print(webhook.id + " " + webhook.callback_url)
+                is_create_org_webhook = False
+                break
+            else:
+                is_create_org_webhook = True
+
+        if bool(is_create_webhook):
+            print(client.create_hook(CALLBACK_URL, TRELLO_ORGANIZATION_ID, "Trello Organiztion Webhook", TRELLO_TOKEN))
+    except Exception as e:
+        print(f' {e}: Error creating webhook for the Trello Organization')
+        pass
