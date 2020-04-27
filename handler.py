@@ -107,9 +107,10 @@ def enabled_powerups(client, board_id):
 
 
 # Get PowerUp Data that is required for monitoring the Board
-def get_powerup_data(board_id):
+def get_powerup_data(client, board_id):
     """
     Get PowerUp Data from the board
+    :param client: Trello client Object
     :param board_id: The ID of the Board
     :return: returns PowerUp Data for monitoring boards
     """
@@ -137,7 +138,7 @@ def create_existing_boards_hook(client):
         try:
             return create_webhook(client, CALLBACK_URL, board.id, f'{board.name} Trello Board Webhook')
         except Exception as e:
-            print(f' {e}: Error creating webhook for the Trello Board ID - {board.id}')
+            print(f' {e}: Error creating webhook for the Trello Board - {board.name}')
             continue
 
 
@@ -264,42 +265,40 @@ def trelloSprintBurndown(event, context):
     :param context: This object provides methods and properties that provide information about the invocation, function and execution environment
     :return: returns nothing
     """
-    print(TRELLO_API_KEY)
-    print(TRELLO_TOKEN)
-    print(BAMBOOHR_API_TOKEN)
-    print(CALLBACK_URL)
-    print(POWERUP_NAME)
-
     # Connect to Trello
     client = TrelloClient(
             api_key=TRELLO_API_KEY,
             token=TRELLO_TOKEN
     )
 
-    print(type(event))
-    print(event)
-
-    try:
-        event['payload'] = base64.b64decode(event['payload'])
-        print(event['payload'])
-    except Exception as e:
-        print(f' {e}: Error no payload data')
-        pass
-
+    # Create Organization Webhook
     is_create_org_webhook = False
-
     try:
         for webhook in client.list_hooks(TRELLO_TOKEN):
             # Check is webhook created for Organization ID
             if webhook.callback_url == CALLBACK_URL and webhook.id_modal == TRELLO_ORGANIZATION_ID:
-                print(webhook.id + " " + webhook.callback_url)
                 is_create_org_webhook = False
                 break
             else:
                 is_create_org_webhook = True
 
-        if bool(is_create_webhook):
+        if bool(is_create_org_webhook):
             print(client.create_hook(CALLBACK_URL, TRELLO_ORGANIZATION_ID, "Trello Organiztion Webhook", TRELLO_TOKEN))
     except Exception as e:
         print(f' {e}: Error creating webhook for the Trello Organization')
         pass
+
+
+    # Create Webhook for Exisiting Boards
+    print(create_existing_boards_hook(client))
+
+
+    # print(type(event))
+    # print(event)
+
+    # try:
+    #     event['payload'] = base64.b64decode(event['payload'])
+    #     print(event['payload'])
+    # except Exception as e:
+    #     print(f' {e}: Error no payload data')
+    #     pass
