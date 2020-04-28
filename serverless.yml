@@ -30,9 +30,16 @@ functions:
     events:
       - http:
           path: ${env:API_PATH}
-          integration: lambda
+          integration: mock
           method: head
-          async: true
+          request:
+            template:
+              application/json: '{"statusCode": 200}'
+          response:
+            template: $input.path('$')
+            statusCodes:
+              200:
+                pattern: ''
       - http:
           path: ${env:API_PATH}
           integration: lambda
@@ -43,7 +50,7 @@ functions:
               application/json: >
                 {
                   "x_trello_webhook": "$util.escapeJavaScript($input.params().header.get('X-Trello-Webhook'))",
-                  "payload": "$util.base64Encode($input.body)"
+                  "payload": "$util.escapeJavaScript($input.body)"
                 }
     tags:
       ManagedBy: "Serverless"
