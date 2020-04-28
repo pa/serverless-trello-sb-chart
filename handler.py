@@ -306,7 +306,6 @@ def trelloSprintBurndown(event, context):
     print(type(event))
     print(event)
 
-    payload = event['payload']
-
-    if not bool(payload):
+    if event:
+        payload = json.loads(event['payload'])
         print(create_new_board_hook(client, payload, existing_webhooks))
