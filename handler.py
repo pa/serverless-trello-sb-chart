@@ -181,11 +181,12 @@ def create_new_board_hook(client, payload, existing_webhooks):
 
 
 # Get Stories and Tasks Counts
-def get_counts(client, payload):
+def get_counts(client, payload, monitor_lists):
     """
     Get List data
     :param client: Trello client Object
     :param payload: Trello Webhook Payload from API Gateway
+    :param monitor_lists: Trello monitor lists from PowerUp Data
     :return: returns count of User Stories/Defects remaining and completed
     """
     stories_defects_remaining = 0
@@ -194,12 +195,11 @@ def get_counts(client, payload):
 
     board_object = Board(client, board_id=payload['action']['data']['board']['id'])
     board_lists = board_object.all_lists()
-    monitor_lists = get_monitor_lists(client, payload)
 
     for monitor_list in monitor_lists:
         for board_list in board_lists:
             cards_list = List(board_object, board_list.id).list_cards()
-            if board_list == monitor_list:
+            if board_list.id == monitor_list:
                 for card in cards_list:
                     if card.name[:2] in 'T ':
                         tasks_remaining += 1
@@ -209,32 +209,35 @@ def get_counts(client, payload):
                         print("Userstory/Defect " + card.name)
                 break
             else:
-                if board_list[-4:] == monitor_list:
+                if (board_list.name)[-4:] == "Done":
                     if card.name[:2] in ('U ', 'D '):
                         stories_defects_done += 1
                         print("Done List - Userstory/Defect " + card.name)
                         break
 
+    return stories_defects_remaining, stories_defects_done, tasks_remaining
+
 
 # Check if cards updated in Board lists
-def verify_list_action(client, payload):
+def verify_list_action(client, payload, monitor_lists):
     """
     Get counts when there is a update to the List
     :param client: Trello client Object
     :param payload: Trello Webhook Payload from API Gateway
+    :param monitor_lists: Trello monitor lists from PowerUp Data
     :return: returns count of User Stories/Defects remaining and completed
     """
-    monitor_lists = get_monitor_lists(client, payload)
-
     if (payload['action']['type'] == "updateCard"):
-        list_action_before = payload['action']['data']['listBefore']['name']
-        list_action_after = payload['action']['data']['listAfter']['name']
-        for monitor_list in monitor_lists:
-            if list_action_before or list_action_after in (monitor_list):
-                get_counts(client, payload)
-                break
-            else:
-                continue
+        try:
+            list_action_before = payload['action']['data']['listBefore']['name']
+            list_action_after = payload['action']['data']['listAfter']['name']
+            for monitor_list in monitor_lists:
+                if list_action_before or list_action_after in monitor_list:
+                    return get_counts(client, payload, monitor_lists)
+                else:
+                    continue
+        except Exception as e:
+            print(f"{e}: No cards moved, Card just got upadted - {payload['action']['data']['board']['name']}")
 
 
 # Get Team members Out Of Office
@@ -302,10 +305,26 @@ def trelloSprintBurndown(event, context):
     # Create Webhook for Exisiting Boards
     print(create_existing_boards_hook(client, existing_webhooks))
 
-
     print(type(event))
     print(event)
 
     if event:
         payload = json.loads(event['payload'])
+
+        # Create Webhook for new board
         print(create_new_board_hook(client, payload, existing_webhooks))
+
+        # Get PowerUp Data
+        powerup_data = get_powerup_data(client, payload['action']['data']['board']['id'])
+
+        # Check if PowerUp Data not None
+        if powerup_data is not None:
+            # Get monitor lists
+            monitor_lists = json.loads(powerup_data)['selected_list']
+
+            # Get counts of Stories/Tasks
+            stories_defects_remaining, stories_defects_done, tasks_remaining = verify_list_action(client, payload, monitor_lists)
+
+            print(f'Stories Remaining: {stories_defects_remaining}')
+            print(f'Stories Done: {stories_defects_done}')
+            print(f'Tasks Remaining: {tasks_remaining}')
