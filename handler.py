@@ -4,6 +4,7 @@ import os
 import json
 import boto3
 import requests
+import datetime
 from trello import TrelloClient
 from trello import Organization
 from trello import Board
@@ -199,6 +200,7 @@ def get_counts(client, payload, monitor_lists):
     for monitor_list in monitor_lists:
         for board_list in board_lists:
             cards_list = List(board_object, board_list.id).list_cards()
+            # Get count of Tasks and Userstory/Defect Remaining
             if board_list.id == monitor_list:
                 for card in cards_list:
                     if card.name[:2] in 'T ':
@@ -208,18 +210,22 @@ def get_counts(client, payload, monitor_lists):
                         stories_defects_remaining += 1
                         print("Userstory/Defect " + card.name)
                 break
-            else:
-                if (board_list.name)[-4:] == "Done":
-                    if card.name[:2] in ('U ', 'D '):
-                        stories_defects_done += 1
-                        print("Done List - Userstory/Defect " + card.name)
-                        break
+
+    for board_list in board_lists:
+        # Get count of Userstories/Defects Done
+        if (board_list.name)[-4:] == "Done":
+            cards_list = List(board_object, board_list.id).list_cards()
+            for card in cards_list:
+                if card.name[:2] in ('U ', 'D '):
+                    stories_defects_done += 1
+                    print("Done List - Userstory/Defect " + card.name)
+            break
 
     return stories_defects_remaining, stories_defects_done, tasks_remaining
 
 
 # Check if cards updated in Board lists
-def verify_list_action(client, payload, monitor_lists):
+def get_counts_on_update(client, payload, monitor_lists):
     """
     Get counts when there is a update to the List
     :param client: Trello client Object
@@ -229,13 +235,7 @@ def verify_list_action(client, payload, monitor_lists):
     """
     if (payload['action']['type'] == "updateCard"):
         try:
-            list_action_before = payload['action']['data']['listBefore']['name']
-            list_action_after = payload['action']['data']['listAfter']['name']
-            for monitor_list in monitor_lists:
-                if list_action_before or list_action_after in monitor_list:
-                    return get_counts(client, payload, monitor_lists)
-                else:
-                    continue
+            return get_counts(client, payload, monitor_lists)
         except Exception as e:
             print(f"{e}: No cards moved, Card just got upadted - {payload['action']['data']['board']['name']}")
 
@@ -273,6 +273,31 @@ def get_team_members_ooo(api_token, org_name, start_date, end_date):
     team_member_ooo_count = len(list(dict.fromkeys(team_member_ooo_array)))
 
     return team_member_ooo, team_member_ooo_count
+
+
+# Get Sprint Dates Method
+def get_sprint_dates(start_day, total_sprint_days):
+    """
+    Gets Sprint dates based on the Start day and Total Sprint days
+    :param start_day: Start day of the Sprint. Eg: Monday
+    :param total_sprint_days: Total days of a Sprint. Value starts from 0. So if Sprint has 5 days then total_sprint_days=4
+    :return: returns list of Sprint dates
+    """
+    sprint_date = []
+    start_date = datetime.date.today()
+    if start_date.strftime("%A") == start_day:
+        sprint_date.append(start_date)
+        business_days_to_add = total_sprint_days
+        current_date = start_date
+        while business_days_to_add > 0:
+            current_date += datetime.timedelta(days=1)
+            weekday = current_date.weekday()
+            if weekday >= 5: # sunday = 6
+                continue
+            business_days_to_add -= 1
+            sprint_date.append(current_date)
+
+    return sprint_date
 
 
 # Success Status Method
@@ -323,7 +348,7 @@ def trelloSprintBurndown(event, context):
             monitor_lists = json.loads(powerup_data)['selected_list']
 
             # Get counts of Stories/Tasks
-            stories_defects_remaining, stories_defects_done, tasks_remaining = verify_list_action(client, payload, monitor_lists)
+            stories_defects_remaining, stories_defects_done, tasks_remaining = get_counts_on_update(client, payload, monitor_lists)
 
             print(f'Stories Remaining: {stories_defects_remaining}')
             print(f'Stories Done: {stories_defects_done}')
