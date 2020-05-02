@@ -277,7 +277,7 @@ def get_sprint_dates(start_day, total_sprint_days):
 
 
 # Create/Update Sprint Data Method
-def update_sprint_data(start_day, board_id, sprint_dates, stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining):
+def update_sprint_data(start_day, board_id, sprint_dates, stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining, team_size):
     """
     Create/Update Sprint Data to Json file
     :param start_day: Start day of the Sprint. Eg: Monday
@@ -304,23 +304,25 @@ def update_sprint_data(start_day, board_id, sprint_dates, stories_defects_remain
     if current_day == start_day:
         sprint_data.update({ board_id: {} })
         for sprint_date in sprint_dates:
-            sprint_data[board_id].update( { sprint_date: { 'stories_defects_remaining': 0, 'stories_defects_done': 0, 'tasks_remaining': 0, 'ideal_tasks_remaining': 0 } } )
+            sprint_data[board_id].update( { 'ideal_tasks_remaining': 0, sprint_date: { 'stories_defects_remaining': 0, 'stories_defects_done': 0 } } )
         sprint_data[board_id].update( {
+                'ideal_tasks_remaining': ideal_tasks_remaining,
                 current_date: {
                 'stories_defects_remaining': stories_defects_remaining,
                 'stories_defects_done': stories_defects_done,
                 'tasks_remaining': tasks_remaining,
-                'ideal_tasks_remaining': ideal_tasks_remaining
+                'team_size': team_size
                 }
             }
         )
     else:
         sprint_data[board_id].update( {
+                'ideal_tasks_remaining': ideal_tasks_remaining,
                 current_date: {
                 'stories_defects_remaining': stories_defects_remaining,
                 'stories_defects_done': stories_defects_done,
                 'tasks_remaining': tasks_remaining,
-                'ideal_tasks_remaining': ideal_tasks_remaining
+                'team_size': team_size
                 }
             }
         )
@@ -364,6 +366,117 @@ def get_team_members_ooo(api_token, org_name, start_date, end_date):
     team_member_ooo_count = len(list(dict.fromkeys(team_member_ooo_array)))
 
     return team_member_ooo, team_member_ooo_count
+
+
+# Create Sprint Burndown Chart
+def create_chart(sprint_data, board_id):
+    """
+    Create/Update Sprint Data to Json file
+    :param sprint_data: The Sprint Data
+    :param board_id: The ID of the Board
+    :return: returns nothing
+    """
+    sprint_dates_list = [""]
+    stories_defects_remaining_list = [0]
+    stories_defects_done_list = [0]
+    tasks_remaining_list = []
+    team_size_list = [0]
+
+    ideal_tasks_remaining = sprint_data[board_id]['ideal_tasks_remaining']
+
+    tasks_remaining_list.append(ideal_tasks_remaining)
+
+    for key in sprint_data[board_id]:
+        try:
+            stories_defects_remaining_list.append(sprint_data[board_id][key]['stories_defects_remaining'])
+            stories_defects_done_list.append(sprint_data[board_id][key]['stories_defects_done'])
+            sprint_dates_list.append(key)
+            tasks_remaining_list.append(sprint_data[board_id][key]['tasks_remaining'])
+            team_size_list.append(sprint_data[board_id][key]['team_size'])
+        except Exception as e:
+            print(e)
+            continue
+
+    team_size_list[0] = team_size_list[1]
+
+    f, ax = plt.subplots()
+
+    x_axis = [0,1,2,3,4,5]
+    x_axis_label = sprint_dates_list
+
+    y_axis_labels = [0]
+    ideal_line_list = [0]
+    for index in range(0, 5):
+        y_axis_label = y_axis_labels[index] + round(max(tasks_remaining_list)/5)
+        ideal_line = ideal_line_list[index] + round(ideal_tasks_remaining/5)
+        y_axis_labels.append(y_axis_label)
+        ideal_line_list.append(ideal_line)
+        ax.axhline(y=y_axis_labels[index],color='#d0e2f6',linewidth=.5, zorder=0)
+
+
+    ax.set_xticks(x_axis)
+    ax.set_xticklabels(x_axis_label,rotation=40,ha='right')
+    ax.set_yticks(y_axis_labels)
+    ax.set_yticklabels(y_axis_labels)
+
+
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['bottom'].set_visible(False)
+    ax.spines['left'].set_visible(False)
+
+    m = 0.25 * ideal_tasks_remaining
+    y_axis= []
+    for x_axis_int in x_axis:
+        y_axis.append(ideal_tasks_remaining - (m * x_axis_int))
+
+    plt.tick_params(
+        axis='both',       # changes apply to the x-axis
+        which='both',      # both major and minor ticks are affected
+        bottom=False,      # ticks along the bottom edge are off
+        left=False,        # ticks along the top edge are off
+        labelbottom=True,
+        labelsize=6,
+        pad=4
+    )
+
+
+    plt.fill_between(np.arange(len(team_size_list)), 0, team_size_list, color='#ff9f68', alpha=0.5)
+
+    p5, = plt.plot(np.arange(len(team_size_list)),team_size_list,'k--',color='#ff9f68', label='line 1',zorder=1)
+    p3 = plt.bar(np.arange(len(stories_defects_remaining_list)), stories_defects_remaining_list, color='#d0e2f6',width=.25,align='edge',zorder=2)
+    p4 = plt.bar(np.arange(len(stories_defects_done_list)), stories_defects_done_list, color='#17b978',width=-.25,align='edge', zorder=2)
+    p1, = plt.plot(x_axis,[element for element in reversed(ideal_line_list)],'k',label='line 3',linewidth=.7, zorder=3)
+    p2, = plt.plot(np.arange(len(tasks_remaining_list)),tasks_remaining_list,'--',color='#482ff7', label='line 1', zorder=4)
+
+    def autolabel(rects):
+        """Attach a text label above each bar in *rects*, displaying its height."""
+        for rect in rects:
+            height = rect.get_height()
+            if height != 0:
+                ax.annotate('{}'.format(height),
+                            xy=(rect.get_x() + rect.get_width() / 2, height),
+                            xytext=(0, 3),  # 3 points vertical offset
+                            textcoords="offset points",
+                            ha='center', va='bottom', size=6)
+
+
+    autolabel(p3)
+    autolabel(p4)
+
+    for index in range(0, len(tasks_remaining_list)):
+        plt.annotate(xy=[index, tasks_remaining_list[index]], s=str(tasks_remaining_list[index]), color='#482ff7', size=6, ha='center', va='bottom', textcoords="offset points", xytext=(2, 3))
+
+    for index in range(0, len(team_size_list)):
+        plt.annotate(xy=[index, team_size_list[index]], s=str(team_size_list[index]), color='#ff9f68', size=6, ha='center', va='bottom', textcoords="offset points", xytext=(2, 3))
+
+
+
+    plt.title("Sprint Burndown Chart")
+
+    plt.legend([p1,p2,p3, p4, p5], ["Ideal Tasks Remaining","Tasks Remaining","Stories/Defects Remaining", "Stories/Defects Done", "Team Size"], loc=1, borderaxespad=0,fontsize=6).get_frame().set_alpha(0.5)
+
+    plt.savefig('/tmp/' +datetime.date.today().strftime("%Y-%m-%d") + '_Sprint_Burndown_Chart_' + board_id, dpi=150)
 
 
 # Success Status Method
