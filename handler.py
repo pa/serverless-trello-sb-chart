@@ -557,7 +557,7 @@ def attach_chart(client, card_id, board_id):
             chart_attachment_data[board_id].update(
                 {
                     current_date: {
-                        'previous_attachment_iqd': response.json()['id']
+                        'previous_attachment_id': response.json()['id']
                     }
                 }
             )
