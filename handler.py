@@ -371,7 +371,7 @@ def get_team_members_ooo(api_token, org_name, start_date, end_date):
 # Create Sprint Burndown Chart
 def create_chart(sprint_data, board_id):
     """
-    Create/Update Sprint Data to Json file
+    Creates Sprint Burndown Chart
     :param sprint_data: The Sprint Data
     :param board_id: The ID of the Board
     :return: returns nothing
@@ -476,7 +476,97 @@ def create_chart(sprint_data, board_id):
 
     plt.legend([p1,p2,p3, p4, p5], ["Ideal Tasks Remaining","Tasks Remaining","Stories/Defects Remaining", "Stories/Defects Done", "Team Size"], loc=1, borderaxespad=0,fontsize=6).get_frame().set_alpha(0.5)
 
-    plt.savefig('/tmp/' +datetime.date.today().strftime("%Y-%m-%d") + '_Sprint_Burndown_Chart_' + board_id, dpi=150)
+    plt.savefig('/tmp/' + datetime.date.today().strftime("%Y-%m-%d") + '_Sprint_Burndown_Chart_' + board_id, dpi=150)
+
+
+# Delete previously attached Chart from the card
+def delete_chart(client, card_id, board_id):
+    """
+    Deletes already existing Sprint Burndown chart
+    :param client: Trello client Object
+    :param card_id: The ID of the Card
+    :param board_id: The ID of the Board
+    :return: returns None
+    """
+    try:
+        if os.path.isfile('/tmp/chart_attachment_data.json'):
+            chart_attachment_data = json.load(open('/tmp/chart_attachment_data.json', 'r'))
+        else:
+            print('No previously attached chart data')
+
+        current_date = datetime.date.today().strftime("%Y-%m-%d")
+        attachment_id = chart_attachment_data[board_id][current_date]['previous_attachment_id']
+
+        return client.fetch_json(
+            f"cards/{card_id}/attachments/{attachment_id}",
+            http_method="DELETE",
+            headers = {
+                    "Accept": "application/json"
+                }
+        )
+    except Exception as e:
+        print(e)
+        pass
+
+
+# Attach Chart to the Card
+def attach_chart(client, card_id, board_id):
+    """
+    Attaches Sprint Burndown chart to a card
+    :param client: Trello client Object
+    :param card_id: The ID of the Card
+    :param board_id: The ID of the Board
+    :return: returns None
+    """
+    chart_attachment_data = {}
+    current_day = datetime.date.today().strftime("%A")
+    current_date = datetime.date.today().strftime("%Y-%m-%d")
+    image_path = '/tmp/' + current_date + '_Sprint_Burndown_Chart_' + board_id
+    try:
+        response = client.fetch_json(
+            f"cards/{card_id}/attachments",
+            http_method="POST",
+            files = {
+                'file': (image_path, open(image_path, 'rb')),
+            },
+            headers = {
+                    "Accept": "application/json"
+            }
+        )
+
+        print(response.json()['id'])
+
+        if os.path.isfile('/tmp/chart_attachment_data.json'):
+            chart_attachment_data = json.load(open('/tmp/chart_attachment_data.json', 'r'))
+        else:
+            with open('/tmp/chart_attachment_data.json', "w") as chart_attachment_data_file:
+                json.dump({}, chart_attachment_data_file)
+            chart_attachment_data_file.close()
+
+        # Update Chart Attachment Data in json file
+        if current_day == start_day:
+            chart_attachment_data.update({ board_id: {} })
+            chart_attachment_data[board_id].update(
+                {
+                    current_date: {
+                        'previous_attachment_id': response.json()['id']
+                    }
+                }
+            )
+        else:
+            chart_attachment_data[board_id].update(
+                {
+                    current_date: {
+                        'previous_attachment_iqd': response.json()['id']
+                    }
+                }
+            )
+        with open('/tmp/chart_attachment_data.json', "w") as chart_attachment_data_file:
+            json.dump(chart_attachment_data, chart_attachment_data_file)
+        chart_attachment_data_file.close()
+    except Exception as e:
+        print(e)
+        pass
 
 
 # Success Status Method
