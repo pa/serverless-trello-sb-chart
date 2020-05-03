@@ -5,6 +5,10 @@ import json
 import boto3
 import requests
 import datetime
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 from trello import TrelloClient
 from trello import Organization
 from trello import Board
@@ -85,7 +89,7 @@ def get_plugins(client, board_id):
         http_method="GET",
         headers = {
                 "Accept": "application/json"
-            },
+        },
         query_params={
             'name': POWERUP_NAME
         }
@@ -251,7 +255,7 @@ def get_counts_on_update(client, payload, monitor_lists, start_day):
     #             print(f"{e}: No cards moved, Card just got upadted - {payload['action']['data']['board']['name']}")
 
 
-# Get Sprint Dates Method
+# Get Sprint Dates
 def get_sprint_dates(start_day, total_sprint_days):
     """
     Gets Sprint dates based on the Start day and Total Sprint days
@@ -276,8 +280,8 @@ def get_sprint_dates(start_day, total_sprint_days):
     return sprint_dates
 
 
-# Create/Update Sprint Data Method
-def update_sprint_data(start_day, board_id, sprint_dates, stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining, team_size):
+# Create/Update Sprint Data
+def update_sprint_data(start_day, board_id, sprint_dates, stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining, team_size, team_members_ooo_count):
     """
     Create/Update Sprint Data to Json file
     :param start_day: Start day of the Sprint. Eg: Monday
@@ -304,13 +308,14 @@ def update_sprint_data(start_day, board_id, sprint_dates, stories_defects_remain
     if current_day == start_day:
         sprint_data.update({ board_id: {} })
         for sprint_date in sprint_dates:
-            sprint_data[board_id].update( { 'ideal_tasks_remaining': 0, sprint_date: { 'stories_defects_remaining': 0, 'stories_defects_done': 0 } } )
+            sprint_data[board_id].update( { 'ideal_tasks_remaining': 0, sprint_date: { 'stories_defects_remaining': 0, 'stories_defects_done': 0, 'team_members_ooo_count': 0 } } )
         sprint_data[board_id].update( {
                 'ideal_tasks_remaining': ideal_tasks_remaining,
                 current_date: {
                 'stories_defects_remaining': stories_defects_remaining,
                 'stories_defects_done': stories_defects_done,
                 'tasks_remaining': tasks_remaining,
+                'team_members_ooo_count': team_members_ooo_count,
                 'team_size': team_size
                 }
             }
@@ -322,6 +327,7 @@ def update_sprint_data(start_day, board_id, sprint_dates, stories_defects_remain
                 'stories_defects_remaining': stories_defects_remaining,
                 'stories_defects_done': stories_defects_done,
                 'tasks_remaining': tasks_remaining,
+                'team_members_ooo_count': team_members_ooo_count,
                 'team_size': team_size
                 }
             }
@@ -380,6 +386,7 @@ def create_chart(sprint_data, board_id):
     stories_defects_remaining_list = [0]
     stories_defects_done_list = [0]
     tasks_remaining_list = []
+    members_ooo_count_list = [0]
     team_size_list = [0]
 
     ideal_tasks_remaining = sprint_data[board_id]['ideal_tasks_remaining']
@@ -390,6 +397,7 @@ def create_chart(sprint_data, board_id):
         try:
             stories_defects_remaining_list.append(sprint_data[board_id][key]['stories_defects_remaining'])
             stories_defects_done_list.append(sprint_data[board_id][key]['stories_defects_done'])
+            members_ooo_count_list.append(sprint_data[board_id][key]['team_member_ooo_count'])
             sprint_dates_list.append(key)
             tasks_remaining_list.append(sprint_data[board_id][key]['tasks_remaining'])
             team_size_list.append(sprint_data[board_id][key]['team_size'])
@@ -441,13 +449,14 @@ def create_chart(sprint_data, board_id):
     )
 
 
-    plt.fill_between(np.arange(len(team_size_list)), 0, team_size_list, color='#ff9f68', alpha=0.5)
+    plt.fill_between(np.arange(len(team_size_list)), 0, team_size_list, color='#ff9f68', alpha=0.5, lw=0)
 
-    p5, = plt.plot(np.arange(len(team_size_list)),team_size_list,'k--',color='#ff9f68', label='line 1',zorder=1)
-    p3 = plt.bar(np.arange(len(stories_defects_remaining_list)), stories_defects_remaining_list, color='#d0e2f6',width=.25,align='edge',zorder=2)
+    p6, = plt.plot(np.arange(len(team_size_list)),team_size_list,'k--',color='#ff9f68', label='line 1',zorder=1)
+    p3 = plt.bar(np.arange(len(stories_defects_remaining_list)), stories_defects_remaining_list, color='#c5e3f6',width=.25,align='edge',zorder=2)
     p4 = plt.bar(np.arange(len(stories_defects_done_list)), stories_defects_done_list, color='#17b978',width=-.25,align='edge', zorder=2)
-    p1, = plt.plot(x_axis,[element for element in reversed(ideal_line_list)],'k',label='line 3',linewidth=.7, zorder=3)
-    p2, = plt.plot(np.arange(len(tasks_remaining_list)),tasks_remaining_list,'--',color='#482ff7', label='line 1', zorder=4)
+    p5 = plt.bar(np.arange(len(members_ooo_count_list)) -.5, members_ooo_count_list, color='#ffcef3',width=.25,align='edge', zorder=2)
+    p1, = plt.plot(x_axis,[element for element in reversed(ideal_line_list)],'k',label='line 3',linewidth=.7, zorder=4)
+    p2, = plt.plot(np.arange(len(tasks_remaining_list)),tasks_remaining_list,'--',color='#482ff7', label='line 1', zorder=5)
 
     def autolabel(rects):
         """Attach a text label above each bar in *rects*, displaying its height."""
@@ -455,14 +464,14 @@ def create_chart(sprint_data, board_id):
             height = rect.get_height()
             if height != 0:
                 ax.annotate('{}'.format(height),
-                            xy=(rect.get_x() + rect.get_width() / 2, height),
-                            xytext=(0, 3),  # 3 points vertical offset
+                            xy=(rect.get_x() + rect.get_width() / 2, height /2),
+                            xytext=(0, -3),  # 3 points vertical offset
                             textcoords="offset points",
                             ha='center', va='bottom', size=6)
 
-
     autolabel(p3)
     autolabel(p4)
+    autolabel(p5)
 
     for index in range(0, len(tasks_remaining_list)):
         plt.annotate(xy=[index, tasks_remaining_list[index]], s=str(tasks_remaining_list[index]), color='#482ff7', size=6, ha='center', va='bottom', textcoords="offset points", xytext=(2, 3))
@@ -470,11 +479,9 @@ def create_chart(sprint_data, board_id):
     for index in range(0, len(team_size_list)):
         plt.annotate(xy=[index, team_size_list[index]], s=str(team_size_list[index]), color='#ff9f68', size=6, ha='center', va='bottom', textcoords="offset points", xytext=(2, 3))
 
-
-
     plt.title("Sprint Burndown Chart")
 
-    plt.legend([p1,p2,p3, p4, p5], ["Ideal Tasks Remaining","Tasks Remaining","Stories/Defects Remaining", "Stories/Defects Done", "Team Size"], loc=1, borderaxespad=0,fontsize=6).get_frame().set_alpha(0.5)
+    plt.legend([p1,p2,p3, p4, p5, p6], ["Ideal Tasks Remaining","Tasks Remaining","Stories/Defects Remaining", "Stories/Defects Done", "Team Members OOO","Team Size"], loc=1, borderaxespad=0,fontsize=6).get_frame().set_alpha(0.5)
 
     plt.savefig('/tmp/' + datetime.date.today().strftime("%Y-%m-%d") + '_Sprint_Burndown_Chart_' + board_id, dpi=150)
 
@@ -488,32 +495,32 @@ def delete_chart(client, card_id, board_id):
     :param board_id: The ID of the Board
     :return: returns None
     """
-    try:
-        if os.path.isfile('/tmp/chart_attachment_data.json'):
+    if os.path.isfile('/tmp/chart_attachment_data.json'):
+        try:
             chart_attachment_data = json.load(open('/tmp/chart_attachment_data.json', 'r'))
-        else:
-            print('No previously attached chart data')
+            current_date = datetime.date.today().strftime("%Y-%m-%d")
+            attachment_id = chart_attachment_data[board_id][current_date]['previous_attachment_id']
 
-        current_date = datetime.date.today().strftime("%Y-%m-%d")
-        attachment_id = chart_attachment_data[board_id][current_date]['previous_attachment_id']
-
-        return client.fetch_json(
-            f"cards/{card_id}/attachments/{attachment_id}",
-            http_method="DELETE",
-            headers = {
-                    "Accept": "application/json"
+            return client.fetch_json(
+                f"cards/{card_id}/attachments/{attachment_id}",
+                http_method="DELETE",
+                headers = {
+                        "Accept": "application/json"
                 }
-        )
-    except Exception as e:
-        print(e)
-        pass
+            )
+        except Exception as error:
+            print(error)
+            pass
+    else:
+        print('Previously attached chart data file not found')
 
 
 # Attach Chart to the Card
-def attach_chart(client, card_id, board_id):
+def attach_chart(client, start_day, card_id, board_id):
     """
     Attaches Sprint Burndown chart to a card
     :param client: Trello client Object
+    :param start_day: Start day of the Sprint. Eg: Monday
     :param card_id: The ID of the Card
     :param board_id: The ID of the Board
     :return: returns None
@@ -521,9 +528,9 @@ def attach_chart(client, card_id, board_id):
     chart_attachment_data = {}
     current_day = datetime.date.today().strftime("%A")
     current_date = datetime.date.today().strftime("%Y-%m-%d")
-    image_path = '/tmp/' + current_date + '_Sprint_Burndown_Chart_' + board_id
+    image_path = '/tmp/' + current_date + '_Sprint_Burndown_Chart_' + board_id + '.png'
     try:
-        response = client.fetch_json(
+        attachment_response = client.fetch_json(
             f"cards/{card_id}/attachments",
             http_method="POST",
             files = {
@@ -534,7 +541,7 @@ def attach_chart(client, card_id, board_id):
             }
         )
 
-        print(response.json()['id'])
+        print(attachment_response['id'])
 
         if os.path.isfile('/tmp/chart_attachment_data.json'):
             chart_attachment_data = json.load(open('/tmp/chart_attachment_data.json', 'r'))
@@ -549,7 +556,7 @@ def attach_chart(client, card_id, board_id):
             chart_attachment_data[board_id].update(
                 {
                     current_date: {
-                        'previous_attachment_id': response.json()['id']
+                        'previous_attachment_id': attachment_response['id']
                     }
                 }
             )
@@ -557,7 +564,7 @@ def attach_chart(client, card_id, board_id):
             chart_attachment_data[board_id].update(
                 {
                     current_date: {
-                        'previous_attachment_id': response.json()['id']
+                        'previous_attachment_id': attachment_response['id']
                     }
                 }
             )
