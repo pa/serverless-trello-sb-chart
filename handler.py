@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 from __future__ import print_function
 import os
+import re
 import json
 import boto3
 import requests
@@ -291,7 +292,7 @@ def update_sprint_data(start_day, board_id, sprint_dates, stories_defects_remain
     :param stories_defects_done: Userstories or Defects done count
     :param tasks_remaining: Tasks remaining count
     :param ideal_tasks_remaining: Ideal tasks remaining count
-    :return: returns nothing
+    :return: returns Sprint Json Data
     """
     sprint_data = {}
     current_day = datetime.date.today().strftime("%A")
@@ -336,18 +337,18 @@ def update_sprint_data(start_day, board_id, sprint_dates, stories_defects_remain
         json.dump(sprint_data, sprint_data_file)
     sprint_data_file.close()
 
-    return 'Updated sprint data successfully to json file'
+    return sprint_data
 
 
-# Get Team members Out Of Office
-def get_team_members_ooo(api_token, org_name, start_date, end_date):
+# Get Organization members Out Of Office
+def get_org_members_ooo(api_token, org_name, start_date, end_date):
     """
-    Gets Team Memnber Out Of Office
+    Gets Organization Memnber Out Of Office
     :param api_token: API Token for connecting BambooHR. To generate an API key, users should log in and click their name in the upper right-hand corner of any page to get to the user context menu
     :param org_name: BambooHR Organization Name
     :param start_date: A start date in the form YYYY-MM-DD
     :param end_date: A end date in the form YYYY-MM-DD
-    :return: returns List of Team Members OOO and Count
+    :return: returns List of Organization Members OOO and Count
     """
     url = 'https://{0}:x@api.bamboohr.com/api/gateway.php/{1}/v1/time_off/whos_out/'.format(api_token, org_name)
 
@@ -361,17 +362,16 @@ def get_team_members_ooo(api_token, org_name, start_date, end_date):
         }
 
     response = requests.request("GET", url, headers=headers, params=querystring)
-    team_members = response.json()
-    team_member_ooo_array = []
-    for team_member in team_members:
-        if team_member['type'] == 'timeOff':
-            team_member_ooo_array.append(team_member['name'])
-        elif team_member['type'] == 'holiday':
+    org_members = response.json()
+    org_members_ooo_array = []
+    for org_member in org_members:
+        if org_member['type'] == 'timeOff':
+            org_members_ooo_array.append(org_member['name'])
+        elif org_member['type'] == 'holiday':
             continue
-    team_member_ooo = list(dict.fromkeys(team_member_ooo_array))
-    team_member_ooo_count = len(list(dict.fromkeys(team_member_ooo_array)))
+    org_members_ooo = list(dict.fromkeys(org_members_ooo_array))
 
-    return team_member_ooo, team_member_ooo_count
+    return org_members_ooo
 
 
 # Create Sprint Burndown Chart
@@ -639,11 +639,38 @@ def trelloSprintBurndown(event, context):
             # Current Sprint Dates
             sprint_dates = get_sprint_dates(sprint_start_day, 4)
 
-            # Update sprint data
-            print(update_sprint_data(sprint_start_day, payload['action']['data']['board']['id'], sprint_dates, stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining))
-
             print(f'Start Date: {sprint_dates[0]} End Date: {sprint_dates[len(sprint_dates)-1]}')
+
+            # Get Organization members Out of Office
+            org_members_ooo = get_org_members_ooo(BAMBOOHR_API_TOKEN, BAMBOOHR_ORG_NAME, sprint_dates[0], sprint_dates[len(sprint_dates)-1])
+
+            team_members = json.loads(powerup_data)['team_member_list']
+            team_size = len(team_members)
+
+            # Get Team members Out of Office
+            team_members_ooo = []
+            for team_member in team_members:
+                for org_member_ooo in org_members_ooo:
+                    regex = r".*(?i)({}).*".format(team_member)
+                    if bool(re.match(regex, org_member_ooo)):
+                        team_members_ooo.append(team_member)
+
+            # Update sprint data
+            sprint_data = update_sprint_data(sprint_start_day, payload['action']['data']['board']['id'], sprint_dates, stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining, team_size, len(team_members_ooo))
+
+            print(sprint_data)
+
+            # Create Sprint Burndown Chart
+            create_chart(sprint_data, payload['action']['data']['board']['id'])
+
+            attachment_card_id = json.loads(powerup_data)['selected_card_for_attachment']
+
+            # Delete previously attached Chart from the card
+            delete_chart(client, attachment_card_id, payload['action']['data']['board']['id'])
+
+            # Attach Chart to Card
+            attach_chart(client, sprint_start_day, attachment_card_id, payload['action']['data']['board']['id'])
 
             print(json.load(open('/tmp/sprint_data.json', 'r')))
 
-            # print(get_team_members_ooo(BAMBOOHR_API_TOKEN, BAMBOOHR_ORG_NAME, sprint_dates[0], sprint_dates[len(sprint_dates)-1]))
+            print(json.load(open('/tmp/chart_attachment_data.json', 'r')))
