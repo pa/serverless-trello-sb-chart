@@ -6,6 +6,7 @@ import json
 import boto3
 import requests
 import datetime
+import pytz
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
@@ -76,6 +77,9 @@ BAMBOOHR_API_TOKEN = format(
         WithDecryption=True
         )['Parameter']['Value']
     )
+
+# Setting Time Zone to CST
+cst_timezone = pytz.timezone('US/Central')
 
 # Get all Plugins/PowerUps from Board
 def get_plugins(client, board_id):
@@ -227,7 +231,7 @@ def get_counts(client, payload, monitor_lists, start_day):
                     print("Done List - Userstory/Defect " + card.name)
             break
 
-    start_date = datetime.date.today()
+    start_date = datetime.datetime.now(cst_timezone)
     if start_date.strftime("%A") == start_day:
         ideal_tasks_remaining = tasks_remaining
 
@@ -265,7 +269,7 @@ def get_sprint_dates(start_day, total_sprint_days):
     :return: returns list of Sprint dates
     """
     sprint_dates = []
-    start_date = datetime.date.today()
+    start_date = datetime.datetime.now(cst_timezone)
     if start_date.strftime("%A") == start_day:
         sprint_dates.append(start_date.strftime("%Y-%m-%d"))
         business_days_to_add = total_sprint_days
@@ -295,8 +299,8 @@ def update_sprint_data(start_day, board_id, sprint_dates, stories_defects_remain
     :return: returns Sprint Json Data
     """
     sprint_data = {}
-    current_day = datetime.date.today().strftime("%A")
-    current_date = datetime.date.today().strftime("%Y-%m-%d")
+    current_day = datetime.datetime.now(cst_timezone).strftime("%A")
+    current_date = datetime.datetime.now(cst_timezone).strftime("%Y-%m-%d")
     # Create Sprint data json file
     if os.path.isfile('/tmp/sprint_data.json'):
         sprint_data = json.load(open('/tmp/sprint_data.json', 'r'))
@@ -393,17 +397,18 @@ def create_chart(sprint_data, board_id):
 
     tasks_remaining_list.append(ideal_tasks_remaining)
 
-    for key in sprint_data[board_id]:
-        try:
-            stories_defects_remaining_list.append(sprint_data[board_id][key]['stories_defects_remaining'])
-            stories_defects_done_list.append(sprint_data[board_id][key]['stories_defects_done'])
-            members_ooo_count_list.append(sprint_data[board_id][key]['team_member_ooo_count'])
-            sprint_dates_list.append(key)
-            tasks_remaining_list.append(sprint_data[board_id][key]['tasks_remaining'])
-            team_size_list.append(sprint_data[board_id][key]['team_size'])
-        except Exception as e:
-            print(e)
-            continue
+    for key, value in sprint_data[board_id].items():
+        if key != 'ideal_tasks_remaining':
+            try:
+                sprint_dates_list.append(key)
+                stories_defects_remaining_list.append(value['stories_defects_remaining'])
+                stories_defects_done_list.append(value['stories_defects_done'])
+                members_ooo_count_list.append(value['team_members_ooo_count'])
+                tasks_remaining_list.append(value['tasks_remaining'])
+                team_size_list.append(value['team_size'])
+            except Exception as error:
+                print(error)
+                continue
 
     team_size_list[0] = team_size_list[1]
 
@@ -483,7 +488,7 @@ def create_chart(sprint_data, board_id):
 
     plt.legend([p1,p2,p3, p4, p5, p6], ["Ideal Tasks Remaining","Tasks Remaining","Stories/Defects Remaining", "Stories/Defects Done", "Team Members OOO","Team Size"], loc=1, borderaxespad=0,fontsize=6).get_frame().set_alpha(0.5)
 
-    plt.savefig('/tmp/' + datetime.date.today().strftime("%Y-%m-%d") + '_Sprint_Burndown_Chart_' + board_id, dpi=150)
+    plt.savefig('/tmp/' + datetime.datetime.now(cst_timezone).strftime("%Y-%m-%d") + '_Sprint_Burndown_Chart_' + board_id, dpi=150)
 
 
 # Delete previously attached Chart from the card
@@ -498,7 +503,7 @@ def delete_chart(client, card_id, board_id):
     if os.path.isfile('/tmp/chart_attachment_data.json'):
         try:
             chart_attachment_data = json.load(open('/tmp/chart_attachment_data.json', 'r'))
-            current_date = datetime.date.today().strftime("%Y-%m-%d")
+            current_date = datetime.datetime.now(cst_timezone).strftime("%Y-%m-%d")
             attachment_id = chart_attachment_data[board_id][current_date]['previous_attachment_id']
 
             return client.fetch_json(
@@ -526,8 +531,8 @@ def attach_chart(client, start_day, card_id, board_id):
     :return: returns None
     """
     chart_attachment_data = {}
-    current_day = datetime.date.today().strftime("%A")
-    current_date = datetime.date.today().strftime("%Y-%m-%d")
+    current_day = datetime.datetime.now(cst_timezone).strftime("%A")
+    current_date = datetime.datetime.now(cst_timezone).strftime("%Y-%m-%d")
     image_path = '/tmp/' + current_date + '_Sprint_Burndown_Chart_' + board_id + '.png'
     try:
         attachment_response = client.fetch_json(
@@ -636,8 +641,17 @@ def trelloSprintBurndown(event, context):
             print(f'Ideal Tasks Remaining: {ideal_tasks_remaining}')
             print(payload['action']['data']['board']['id'])
 
+            # CST Current Time
+            print(datetime.datetime.now(cst_timezone))
+
+            # CST Day and Date
+            print(datetime.datetime.now(cst_timezone).strftime("%A"))
+            print(datetime.datetime.now(cst_timezone).strftime("%Y-%m-%d"))
+
             # Current Sprint Dates
             sprint_dates = get_sprint_dates(sprint_start_day, 4)
+
+            print(sprint_dates)
 
             print(f'Start Date: {sprint_dates[0]} End Date: {sprint_dates[len(sprint_dates)-1]}')
 

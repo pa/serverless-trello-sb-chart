@@ -2,6 +2,9 @@ service: trello-sb-chart-automation
 # app and org for use with dashboard.serverless.com
 #app: your-app-name
 #org: your-org-name
+package:
+  exclude:
+    - node_modules/**
 
 provider:
   name: aws
@@ -15,7 +18,7 @@ functions:
   trelloSprintBurndown:
     handler: handler.trelloSprintBurndown
     description: Creates Sprint Burndown Chart in Trello Board
-    runtime: python3.8
+    runtime: python3.6
     memorySize: 512
     timeout: 120
     environment:
