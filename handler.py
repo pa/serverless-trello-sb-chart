@@ -238,34 +238,13 @@ def get_counts(client, payload, monitor_lists, start_day):
     return stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining
 
 
-# Check if cards updated in Board lists
-def get_counts_on_update(client, payload, monitor_lists, start_day):
-    """
-    Get counts when there is a update to the List
-    :param client: Trello client Object
-    :param payload: Trello Webhook Payload from API Gateway
-    :param monitor_lists: Trello monitor lists from PowerUp Data
-    :return: returns count of User Stories/Defects remaining and completed
-    """
-    if payload['action']['type'] in ('updateCard', 'createCard'):
-        try:
-            return get_counts(client, payload, monitor_lists, start_day)
-        except Exception as e:
-            print(f"{e}: No cards moved, Card just got upadted - {payload['action']['data']['board']['name']}")
-    # if payload['action']['data']['board']['id'] in monitor_lists or (payload['action']['data']['board']['name'])[-4:] == "Done":
-    #     if payload['action']['type'] in ('updateCard', 'createCard'):
-    #         try:
-    #             return get_counts(client, payload, monitor_lists, start_day)
-    #         except Exception as e:
-    #             print(f"{e}: No cards moved, Card just got upadted - {payload['action']['data']['board']['name']}")
-
-
 # Get Sprint Dates
-def get_sprint_dates(start_day, total_sprint_days):
+def get_sprint_dates(start_day, total_sprint_days, board_id):
     """
     Gets Sprint dates based on the Start day and Total Sprint days
     :param start_day: Start day of the Sprint. Eg: Monday
     :param total_sprint_days: Total days of a Sprint. Value starts from 0. So if Sprint has 5 days then total_sprint_days=4
+    :param board_id: The ID of the Board
     :return: returns list of Sprint dates
     """
     sprint_dates = []
@@ -281,6 +260,14 @@ def get_sprint_dates(start_day, total_sprint_days):
                 continue
             business_days_to_add -= 1
             sprint_dates.append(current_date.strftime("%Y-%m-%d"))
+    else:
+        for key in json.load(open('/tmp/sprint_data.json', 'r'))[board_id].items():
+            if key != 'ideal_tasks_remaining':
+                try:
+                    sprint_dates.append(key)
+                except Exception as error:
+                    print(error)
+                    continue
 
     return sprint_dates
 
@@ -618,73 +605,75 @@ def trelloSprintBurndown(event, context):
         payload = json.loads(event['payload'])
 
         # Create Webhook for new board
-        print(create_new_board_hook(client, payload, existing_webhooks))
+        if payload['action']['type'] == 'addToOrganizationBoard':
+            print(create_new_board_hook(client, payload, existing_webhooks))
 
-        # Get PowerUp Data
-        powerup_data = get_powerup_data(client, payload['action']['data']['board']['id'])
+        if payload['action']['type'] in ('updateCard', 'createCard'):
+            # Get PowerUp Data
+            powerup_data = get_powerup_data(client, payload['action']['data']['board']['id'])
 
-        # Check PowerUp Data exists
-        if powerup_data is not None:
-            print(json.loads(powerup_data))
+            # Check PowerUp Data exists
+            if powerup_data is not None:
+                print(json.loads(powerup_data))
 
-            sprint_start_day = json.loads(powerup_data)['sprint_start_day']
+                sprint_start_day = json.loads(powerup_data)['sprint_start_day']
 
-            # Get monitor lists
-            monitor_lists = json.loads(powerup_data)['selected_list']
+                # Get monitor lists
+                monitor_lists = json.loads(powerup_data)['selected_list']
 
-            # Get counts of Stories/Tasks
-            stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining = get_counts_on_update(client, payload, monitor_lists, sprint_start_day)
+                # Get counts of Stories/Tasks
+                stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining = get_counts(client, payload, monitor_lists, sprint_start_day)
 
-            print(f'Stories Remaining: {stories_defects_remaining}')
-            print(f'Stories Done: {stories_defects_done}')
-            print(f'Tasks Remaining: {tasks_remaining}')
-            print(f'Ideal Tasks Remaining: {ideal_tasks_remaining}')
-            print(payload['action']['data']['board']['id'])
+                print(f'Stories Remaining: {stories_defects_remaining}')
+                print(f'Stories Done: {stories_defects_done}')
+                print(f'Tasks Remaining: {tasks_remaining}')
+                print(f'Ideal Tasks Remaining: {ideal_tasks_remaining}')
+                print(payload['action']['data']['board']['id'])
 
-            # CST Current Time
-            print(datetime.datetime.now(cst_timezone))
+                # CST Current Time
+                print(datetime.datetime.now(cst_timezone))
 
-            # CST Day and Date
-            print(datetime.datetime.now(cst_timezone).strftime("%A"))
-            print(datetime.datetime.now(cst_timezone).strftime("%Y-%m-%d"))
+                # CST Day and Date
+                print(datetime.datetime.now(cst_timezone).strftime("%A"))
+                print(datetime.datetime.now(cst_timezone).strftime("%Y-%m-%d"))
 
-            # Current Sprint Dates
-            sprint_dates = get_sprint_dates(sprint_start_day, 4)
+                # Current Sprint Dates
+                sprint_dates = get_sprint_dates(sprint_start_day, 4, payload['action']['data']['board']['id'])
 
-            print(sprint_dates)
+                print(sprint_dates)
 
-            print(f'Start Date: {sprint_dates[0]} End Date: {sprint_dates[len(sprint_dates)-1]}')
+                print(f'Start Date: {sprint_dates[0]} End Date: {sprint_dates[len(sprint_dates)-1]}')
 
-            # Get Organization members Out of Office
-            org_members_ooo = get_org_members_ooo(BAMBOOHR_API_TOKEN, BAMBOOHR_ORG_NAME, sprint_dates[0], sprint_dates[len(sprint_dates)-1])
+                # Get Organization members Out of Office
+                org_members_ooo = get_org_members_ooo(BAMBOOHR_API_TOKEN, BAMBOOHR_ORG_NAME, sprint_dates[0], sprint_dates[len(sprint_dates)-1])
 
-            team_members = json.loads(powerup_data)['team_member_list']
-            team_size = len(team_members)
+                team_members = json.loads(powerup_data)['team_member_list']
+                team_size = len(team_members)
 
-            # Get Team members Out of Office
-            team_members_ooo = []
-            for team_member in team_members:
-                for org_member_ooo in org_members_ooo:
-                    regex = r".*(?i)({}).*".format(team_member)
-                    if bool(re.match(regex, org_member_ooo)):
-                        team_members_ooo.append(team_member)
+                # Get Team members Out of Office
+                team_members_ooo = []
+                for team_member in team_members:
+                    for org_member_ooo in org_members_ooo:
+                        regex = r".*(?i)({}).*".format(team_member)
+                        if bool(re.match(regex, org_member_ooo)):
+                            team_members_ooo.append(team_member)
 
-            # Update sprint data
-            sprint_data = update_sprint_data(sprint_start_day, payload['action']['data']['board']['id'], sprint_dates, stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining, team_size, len(team_members_ooo))
+                # Update sprint data
+                sprint_data = update_sprint_data(sprint_start_day, payload['action']['data']['board']['id'], sprint_dates, stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining, team_size, len(team_members_ooo))
 
-            print(sprint_data)
+                print(sprint_data)
 
-            # Create Sprint Burndown Chart
-            create_chart(sprint_data, payload['action']['data']['board']['id'])
+                # Create Sprint Burndown Chart
+                create_chart(sprint_data, payload['action']['data']['board']['id'])
 
-            attachment_card_id = json.loads(powerup_data)['selected_card_for_attachment']
+                attachment_card_id = json.loads(powerup_data)['selected_card_for_attachment']
 
-            # Delete previously attached Chart from the card
-            delete_chart(client, attachment_card_id, payload['action']['data']['board']['id'])
+                # Delete previously attached Chart from the card
+                delete_chart(client, attachment_card_id, payload['action']['data']['board']['id'])
 
-            # Attach Chart to Card
-            attach_chart(client, sprint_start_day, attachment_card_id, payload['action']['data']['board']['id'])
+                # Attach Chart to Card
+                attach_chart(client, sprint_start_day, attachment_card_id, payload['action']['data']['board']['id'])
 
-            print(json.load(open('/tmp/sprint_data.json', 'r')))
+                print(json.load(open('/tmp/sprint_data.json', 'r')))
 
-            print(json.load(open('/tmp/chart_attachment_data.json', 'r')))
+                print(json.load(open('/tmp/chart_attachment_data.json', 'r')))
