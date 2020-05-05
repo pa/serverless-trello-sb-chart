@@ -207,6 +207,7 @@ def get_counts(client, payload, monitor_lists, start_day):
     :param monitor_lists: Trello monitor lists from PowerUp Data
     :return: returns count of User Stories/Defects remaining and completed
     """
+    current_date = datetime.datetime.now(cst_timezone)
     stories_defects_remaining = 0
     stories_defects_done = 0
     tasks_remaining = 0
@@ -229,6 +230,9 @@ def get_counts(client, payload, monitor_lists, start_day):
                         print("Userstory/Defect " + card.name)
                 break
 
+    if current_date.strftime("%A") == start_day:
+        ideal_tasks_remaining = tasks_remaining
+
     for board_list in board_lists:
         # Get count of Userstories/Defects Done
         if (board_list.name)[-4:] == "Done":
@@ -237,11 +241,10 @@ def get_counts(client, payload, monitor_lists, start_day):
                 if card.name[:2] in ('U ', 'D '):
                     stories_defects_done += 1
                     print("Done List - Userstory/Defect " + card.name)
+                if current_date.strftime("%A") == start_day:
+                    if card.name[:2] in 'T ':
+                        ideal_tasks_remaining += 1
             break
-
-    start_date = datetime.datetime.now(cst_timezone)
-    if start_date.strftime("%A") == start_day:
-        ideal_tasks_remaining = tasks_remaining
 
     return stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining
 

@@ -1,4 +1,4 @@
-service: ServerlessAutomationPramodh # trello-sb-chart-automation
+service: trello-sb-chart-automation
 # app and org for use with dashboard.serverless.com
 #app: your-app-name
 #org: your-org-name
