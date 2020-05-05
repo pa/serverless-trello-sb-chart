@@ -1,4 +1,4 @@
-service: trello-sb-chart-automation
+service: ServerlessAutomationPramodh # trello-sb-chart-automation
 # app and org for use with dashboard.serverless.com
 #app: your-app-name
 #org: your-org-name
@@ -28,8 +28,10 @@ functions:
       TRELLO_ORGANIZATION_ID: ${env:TRELLO_ORGANIZATION_ID}
       POWERUP_NAME: ${env:POWERUP_NAME}
       BAMBOOHR_ORG_NAME: ${env:BAMBOOHR_ORG_NAME}
-      CALLBACK_URL: 
+      CALLBACK_URL:
         Fn::Sub: 'https://#{ApiGatewayRestApi}.execute-api.#{AWS::Region}.amazonaws.com/${self:provider.stage}/${env:API_PATH}'
+      DEPLOYMENT_BUCKET:
+        Ref: ServerlessDeploymentBucket
     events:
       - http:
           path: ${env:API_PATH}

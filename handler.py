@@ -15,6 +15,7 @@ from trello import TrelloClient
 from trello import Organization
 from trello import Board
 from trello import List
+from botocore.exceptions import ClientError
 
 # Get the SSM Parameter Keys
 try:
@@ -52,6 +53,13 @@ try:
 except Exception:
     print('Power-Up Name value missing in Lambda Environment Variable')
 
+try:
+    DEPLOYMENT_BUCKET = os.getenv('DEPLOYMENT_BUCKET')
+except Exception:
+    print('Deployment Bucket Name value missing in Lambda Environment Variable')
+
+sprint_data_file_name = 'sprint_data.json'
+chart_attachment_data_file_name = 'chart_attachment_data.json'
 
 # Boto3 SSM module
 ssm = boto3.client('ssm')
@@ -261,7 +269,7 @@ def get_sprint_dates(start_day, total_sprint_days, board_id):
             business_days_to_add -= 1
             sprint_dates.append(current_date.strftime("%Y-%m-%d"))
     else:
-        for key in json.load(open('/tmp/sprint_data.json', 'r'))[board_id].items():
+        for key in json.load(open('/tmp/' + sprint_data_file_name, 'r'))[board_id].items():
             if key != 'ideal_tasks_remaining':
                 try:
                     sprint_dates.append(key)
@@ -289,10 +297,10 @@ def update_sprint_data(start_day, board_id, sprint_dates, stories_defects_remain
     current_day = datetime.datetime.now(cst_timezone).strftime("%A")
     current_date = datetime.datetime.now(cst_timezone).strftime("%Y-%m-%d")
     # Create Sprint data json file
-    if os.path.isfile('/tmp/sprint_data.json'):
-        sprint_data = json.load(open('/tmp/sprint_data.json', 'r'))
+    if os.path.isfile('/tmp/' + sprint_data_file_name):
+        sprint_data = json.load(open('/tmp/' + sprint_data_file_name, 'r'))
     else:
-        with open('/tmp/sprint_data.json', "w") as sprint_data_file:
+        with open('/tmp/' + sprint_data_file_name, "w") as sprint_data_file:
             json.dump({}, sprint_data_file)
         sprint_data_file.close()
 
@@ -324,7 +332,7 @@ def update_sprint_data(start_day, board_id, sprint_dates, stories_defects_remain
                 }
             }
         )
-    with open('/tmp/sprint_data.json', "w") as sprint_data_file:
+    with open('/tmp/' + sprint_data_file_name, "w") as sprint_data_file:
         json.dump(sprint_data, sprint_data_file)
     sprint_data_file.close()
 
@@ -406,6 +414,7 @@ def create_chart(sprint_data, board_id):
 
     y_axis_labels = [0]
     ideal_line_list = [0]
+    ax.axhline(y=0,color='#d0e2f6',linewidth=.5, zorder=0)
     for index in range(0, 5):
         y_axis_label = y_axis_labels[index] + round(max(tasks_remaining_list)/5)
         ideal_line = ideal_line_list[index] + (ideal_tasks_remaining/5)
@@ -526,7 +535,7 @@ def attach_chart(client, start_day, card_id, board_id):
             f"cards/{card_id}/attachments",
             http_method="POST",
             files = {
-                'file': (image_path, open(image_path, 'rb')),
+                'file': (current_date + '_Sprint_Burndown_Chart.png', open(image_path, 'rb')),
             },
             headers = {
                     "Accept": "application/json"
@@ -601,6 +610,9 @@ def trelloSprintBurndown(event, context):
     print(type(event))
     print(event)
 
+    # S3 Client
+    s3 = boto3.resource('s3')
+
     if event:
         payload = json.loads(event['payload'])
 
@@ -609,6 +621,14 @@ def trelloSprintBurndown(event, context):
             print(create_new_board_hook(client, payload, existing_webhooks))
 
         if payload['action']['type'] in ('updateCard', 'createCard'):
+            # Download Sprint data and Card Attachment data files from S3
+            try:
+                s3.Bucket(DEPLOYMENT_BUCKET).download_file(sprint_data_file_name, '/tmp/' + sprint_data_file_name)
+                s3.Bucket(DEPLOYMENT_BUCKET).download_file(chart_attachment_data_file_name, '/tmp/' + chart_attachment_data_file_name)
+            except Exception as e:
+                print(e)
+                pass
+
             # Get PowerUp Data
             powerup_data = get_powerup_data(client, payload['action']['data']['board']['id'])
 
@@ -673,6 +693,14 @@ def trelloSprintBurndown(event, context):
 
                 # Attach Chart to Card
                 attach_chart(client, sprint_start_day, attachment_card_id, payload['action']['data']['board']['id'])
+
+                # Upload Sprint data and Card Attachment data files from S3
+                try:
+                    s3.Object(DEPLOYMENT_BUCKET, sprint_data_file_name).put(Body=open('/tmp/' + sprint_data_file_name, 'rb'))
+                    s3.Object(DEPLOYMENT_BUCKET, chart_attachment_data_file_name).put(Body=open('/tmp/' + chart_attachment_data_file_name, 'rb'))
+                except Exception as e:
+                    print(e)
+                    pass
 
                 print(json.load(open('/tmp/sprint_data.json', 'r')))
 
