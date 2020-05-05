@@ -408,7 +408,7 @@ def create_chart(sprint_data, board_id):
     ideal_line_list = [0]
     for index in range(0, 5):
         y_axis_label = y_axis_labels[index] + round(max(tasks_remaining_list)/5)
-        ideal_line = ideal_line_list[index] + round(ideal_tasks_remaining/5)
+        ideal_line = ideal_line_list[index] + (ideal_tasks_remaining/5)
         y_axis_labels.append(y_axis_label)
         ideal_line_list.append(ideal_line)
         ax.axhline(y=y_axis_labels[index],color='#d0e2f6',linewidth=.5, zorder=0)
