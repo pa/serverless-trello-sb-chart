@@ -325,7 +325,6 @@ def update_sprint_data(start_day, board_id, sprint_dates, stories_defects_remain
         )
     else:
         sprint_data[board_id].update( {
-                'ideal_tasks_remaining': ideal_tasks_remaining,
                 current_date: {
                 'stories_defects_remaining': stories_defects_remaining,
                 'stories_defects_done': stories_defects_done,
