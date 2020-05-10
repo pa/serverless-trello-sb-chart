@@ -154,64 +154,12 @@ def get_powerup_data(client, board_id):
             return plugin_data['value']
 
 
-# Create Webhook for Existing Organization Boards
-def create_existing_boards_hook(client, existing_webhooks):
-    """
-    Create Webhooks for Organization Boards
-    :param client: Trello client Object
-    :param existing_webhooks: Already existing webhooks for the TRELLO_TOKEN
-    :return: returns status of the Webhook Creation
-    """
-    boards = Organization(client, TRELLO_ORGANIZATION_ID).all_boards()
-    is_create_board_webhook = False
-    for board in boards:
-        for webhook in existing_webhooks:
-            # Check is webhook created for Organization ID
-            if webhook.callback_url == CALLBACK_URL and webhook.id_model == board.id:
-                is_create_board_webhook = False
-                break
-            else:
-                is_create_board_webhook = True
-        try:
-            if bool(is_create_board_webhook):
-                client.create_hook(CALLBACK_URL, board.id, f'{board.name} Trello Board Webhook', TRELLO_TOKEN)
-        except Exception as e:
-            print(f' {e}: Error creating webhook for the Trello Board - {board.name}')
-            continue
-    return 'Created webhooks for already existing boards'
-
-
-# Create Webhook for New Organization Boards
-def create_new_board_hook(client, payload, existing_webhooks):
-    """
-    Create Webhooks for Organization Boards
-    :param client: Trello client Object
-    :param payload: Trello Webhook Payload from API Gateway
-    :param existing_webhooks: Already existing webhooks for the TRELLO_TOKEN
-    :return: returns status of the Webhook Creation
-    """
-    is_create_board_webhook = False
-    try:
-        for webhook in existing_webhooks:
-            # Check is webhook created for Organization ID
-            if webhook.callback_url == CALLBACK_URL and webhook.id_model == payload['action']['data']['board']['id']:
-                is_create_board_webhook = False
-                break
-            else:
-                is_create_board_webhook = True
-        if bool(is_create_board_webhook):
-            if payload['action']['type'] == "addToOrganizationBoard":
-                return client.create_hook(CALLBACK_URL, payload['action']['data']['board']['id'], f"{payload['action']['data']['board']['name']} Trello Board Webhook", TRELLO_TOKEN)
-    except Exception as e:
-        print(f"{e}: Error creating webhook for the Trello Board ID - {payload['action']['data']['board']['name']}")
-
-
 # Get Stories and Tasks Counts
-def get_counts(client, payload, monitor_lists, start_day):
+def get_counts(client, board_id, monitor_lists, start_day):
     """
     Get List data
     :param client: Trello client Object
-    :param payload: Trello Webhook Payload from API Gateway
+    :param board_id: The ID of the Board
     :param monitor_lists: Trello monitor lists from PowerUp Data
     :return: returns count of User Stories/Defects remaining and completed
     """
@@ -220,7 +168,7 @@ def get_counts(client, payload, monitor_lists, start_day):
     tasks_remaining = 0
     ideal_tasks_remaining = 0
 
-    board_object = Board(client, board_id=payload['action']['data']['board']['id'])
+    board_object = Board(client, board_id=board_id)
     board_lists = board_object.all_lists()
 
     for monitor_list in monitor_lists:
@@ -593,10 +541,10 @@ def success():
 
 def trelloSprintBurndown(event, context):
     """
-    Extracts Trello Webhook Payload information and automates Trello
-    :param event: Event data from API Gateway contains Trello Webhook Payload
+    Scheduled Event to update Sprint Burndown Chart in Trello
+    :param event: Event data
     :param context: This object provides methods and properties that provide information about the invocation, function and execution environment
-    :return: returns nothing
+    :return: returns status
     """
     # Connect to Trello
     client = TrelloClient(
@@ -604,113 +552,101 @@ def trelloSprintBurndown(event, context):
             token=TRELLO_TOKEN
     )
 
-    print(type(event))
-    print(event)
-
-    existing_webhooks = client.list_hooks(TRELLO_TOKEN)
 
     # S3 Client
     s3 = boto3.resource('s3')
 
-    if event:
-        if current_day not in ('Saturday', 'Sunday'):
+    if current_day not in ('Saturday', 'Sunday'):
 
-            # CST Day and Date
-            print(current_day)
-            print(current_date)
+        # CST Day and Date
+        print(current_day)
+        print(current_date)
 
-            payload = json.loads(event['payload'])
+        # Get Organizations Boards
+        boards = Organization(client, TRELLO_ORGANIZATION_ID).all_boards()
 
-            board_id = payload['action']['data']['board']['id']
+        for board in boards:
+            print(board.id)
 
-            # Create Webhook for new board
-            if payload['action']['type'] == 'addToOrganizationBoard':
-                print(create_new_board_hook(client, payload, existing_webhooks))
+            # Download Sprint data and Card Attachment data files from S3
+            try:
+                s3.Bucket(DEPLOYMENT_BUCKET).download_file(sprint_data_file_name, '/tmp/' + sprint_data_file_name)
+                s3.Bucket(DEPLOYMENT_BUCKET).download_file(chart_attachment_data_file_name, '/tmp/' + chart_attachment_data_file_name)
+            except Exception as e:
+                print(e)
+                pass
 
-            if payload['action']['type'] in ('updateCard', 'createCard'):
-                # Download Sprint data and Card Attachment data files from S3
+            # Get PowerUp Data
+            powerup_data = get_powerup_data(client, board.id)
+
+            # Check PowerUp Data exists
+            if powerup_data is not None:
+                print(json.loads(powerup_data))
+
+                sprint_start_day = json.loads(powerup_data)['sprint_start_day']
+                total_sprint_days = json.loads(powerup_data)['total_sprint_days']
+
+                # Get monitor lists
+                monitor_lists = json.loads(powerup_data)['selected_list']
+
+                # Get counts of Stories/Tasks
+                stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining = get_counts(client, board.id, monitor_lists, sprint_start_day)
+
+                print(f'Stories Remaining: {stories_defects_remaining}')
+                print(f'Stories Done: {stories_defects_done}')
+                print(f'Tasks Remaining: {tasks_remaining}')
+                print(f'Ideal Tasks Remaining: {ideal_tasks_remaining}')
+                print(board.id)
+
+                # Current Sprint Dates
+                sprint_dates = get_sprint_dates(sprint_start_day, (total_sprint_days - 1), board.id)
+
+                print(sprint_dates)
+
+                print(f'Start Date: {sprint_dates[0]} End Date: {sprint_dates[len(sprint_dates)-1]}')
+
+                # Get Organization members Out of Office
+                org_members_ooo = get_org_members_ooo(BAMBOOHR_API_TOKEN, BAMBOOHR_ORG_NAME, sprint_dates[0], sprint_dates[len(sprint_dates)-1])
+
+                team_members = json.loads(powerup_data)['team_member_list']
+                team_size = len(team_members)
+
+                # Get Team members Out of Office
+                team_members_ooo = []
+                for team_member in team_members:
+                    for org_member_ooo in org_members_ooo:
+                        member_sequence = SequenceMatcher(a=team_member, b=org_member_ooo)
+                        print(f'Team Member Compare ratio: {member_sequence.ratio()}')
+                        if member_sequence.ratio() >= 0.3:
+                            print(member_sequence.ratio())
+                            team_members_ooo.append(team_member)
+
+                # Update sprint data
+                sprint_data = update_sprint_data(sprint_start_day, board.id, sprint_dates, stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining, team_size, len(team_members_ooo))
+
+                print(sprint_data)
+
+                # Create Sprint Burndown Chart
+                create_chart(sprint_data, total_sprint_days, board.id)
+
+                attachment_card_id = json.loads(powerup_data)['selected_card_for_attachment']
+
+                # Delete previously attached Chart from the card
+                delete_chart(client, attachment_card_id, board.id)
+
+                # Attach Chart to Card
+                attach_chart(client, sprint_start_day, attachment_card_id, board.id)
+
+                # Upload Sprint data and Card Attachment data files from S3
                 try:
-                    s3.Bucket(DEPLOYMENT_BUCKET).download_file(sprint_data_file_name, '/tmp/' + sprint_data_file_name)
-                    s3.Bucket(DEPLOYMENT_BUCKET).download_file(chart_attachment_data_file_name, '/tmp/' + chart_attachment_data_file_name)
+                    s3.Object(DEPLOYMENT_BUCKET, sprint_data_file_name).put(Body=open('/tmp/' + sprint_data_file_name, 'rb'))
+                    s3.Object(DEPLOYMENT_BUCKET, chart_attachment_data_file_name).put(Body=open('/tmp/' + chart_attachment_data_file_name, 'rb'))
                 except Exception as e:
                     print(e)
                     pass
 
-                # Get PowerUp Data
-                powerup_data = get_powerup_data(client, board_id)
+                print(json.load(open('/tmp/sprint_data.json', 'r')))
 
-                # Check PowerUp Data exists
-                if powerup_data is not None:
-                    print(json.loads(powerup_data))
+                print(json.load(open('/tmp/chart_attachment_data.json', 'r')))
 
-                    sprint_start_day = json.loads(powerup_data)['sprint_start_day']
-                    total_sprint_days = json.loads(powerup_data)['total_sprint_days']
-
-                    # Get monitor lists
-                    monitor_lists = json.loads(powerup_data)['selected_list']
-
-                    # Get counts of Stories/Tasks
-                    stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining = get_counts(client, payload, monitor_lists, sprint_start_day)
-
-                    print(f'Stories Remaining: {stories_defects_remaining}')
-                    print(f'Stories Done: {stories_defects_done}')
-                    print(f'Tasks Remaining: {tasks_remaining}')
-                    print(f'Ideal Tasks Remaining: {ideal_tasks_remaining}')
-                    print(board_id)
-
-                    # Current Sprint Dates
-                    sprint_dates = get_sprint_dates(sprint_start_day, (total_sprint_days - 1), board_id)
-
-                    print(sprint_dates)
-
-                    print(f'Start Date: {sprint_dates[0]} End Date: {sprint_dates[len(sprint_dates)-1]}')
-
-                    # Get Organization members Out of Office
-                    org_members_ooo = get_org_members_ooo(BAMBOOHR_API_TOKEN, BAMBOOHR_ORG_NAME, sprint_dates[0], sprint_dates[len(sprint_dates)-1])
-
-                    team_members = json.loads(powerup_data)['team_member_list']
-                    team_size = len(team_members)
-
-                    # Get Team members Out of Office
-                    team_members_ooo = []
-                    for team_member in team_members:
-                        for org_member_ooo in org_members_ooo:
-                            member_sequence = SequenceMatcher(a=team_member, b=org_member_ooo)
-                            print(f'Team Member Compare ratio: {member_sequence.ratio()}')
-                            if member_sequence.ratio() >= 0.3:
-                                print(member_sequence.ratio())
-                                team_members_ooo.append(team_member)
-
-                    # Update sprint data
-                    sprint_data = update_sprint_data(sprint_start_day, board_id, sprint_dates, stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining, team_size, len(team_members_ooo))
-
-                    print(sprint_data)
-
-                    # Create Sprint Burndown Chart
-                    create_chart(sprint_data, total_sprint_days, board_id)
-
-                    attachment_card_id = json.loads(powerup_data)['selected_card_for_attachment']
-
-                    # Delete previously attached Chart from the card
-                    delete_chart(client, attachment_card_id, board_id)
-
-                    # Attach Chart to Card
-                    attach_chart(client, sprint_start_day, attachment_card_id, board_id)
-
-                    # Upload Sprint data and Card Attachment data files from S3
-                    try:
-                        s3.Object(DEPLOYMENT_BUCKET, sprint_data_file_name).put(Body=open('/tmp/' + sprint_data_file_name, 'rb'))
-                        s3.Object(DEPLOYMENT_BUCKET, chart_attachment_data_file_name).put(Body=open('/tmp/' + chart_attachment_data_file_name, 'rb'))
-                    except Exception as e:
-                        print(e)
-                        pass
-
-                    print(json.load(open('/tmp/sprint_data.json', 'r')))
-
-                    print(json.load(open('/tmp/chart_attachment_data.json', 'r')))
-    else:
-        # Create Webhook for Trello Organization
-        print(client.create_hook(CALLBACK_URL, TRELLO_ORGANIZATION_ID, "Trello Organiztion Webhook", TRELLO_TOKEN))
-
-        # Create Webhook for Exisiting Boards
-        print(create_existing_boards_hook(client, existing_webhooks))
+                success()
