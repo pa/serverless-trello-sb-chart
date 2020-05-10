@@ -15,7 +15,9 @@ from trello import TrelloClient
 from trello import Organization
 from trello import Board
 from trello import List
+from difflib import SequenceMatcher
 from botocore.exceptions import ClientError
+
 
 # Get the SSM Parameter Keys
 try:
@@ -272,7 +274,7 @@ def get_sprint_dates(start_day, total_sprint_days, board_id):
             business_days_to_add -= 1
             sprint_dates.append(current_date.strftime("%Y-%m-%d"))
     else:
-        for key in json.load(open('/tmp/' + sprint_data_file_name, 'r'))[board_id].items():
+        for key, value in json.load(open('/tmp/' + sprint_data_file_name, 'r'))[board_id].items():
             if key != 'ideal_tasks_remaining':
                 try:
                     sprint_dates.append(key)
@@ -376,7 +378,7 @@ def get_org_members_ooo(api_token, org_name, start_date, end_date):
 
 
 # Create Sprint Burndown Chart
-def create_chart(sprint_data, board_id):
+def create_chart(sprint_data, total_sprint_days, board_id):
     """
     Creates Sprint Burndown Chart
     :param sprint_data: The Sprint Data
@@ -411,19 +413,18 @@ def create_chart(sprint_data, board_id):
 
     f, ax = plt.subplots()
 
-    x_axis = [0,1,2,3,4,5]
+    x_axis = [item for item in range(0, total_sprint_days + 1)]
     x_axis_label = sprint_dates_list
 
     y_axis_labels = [0]
     ideal_line_list = [0]
     ax.axhline(y=0,color='#d0e2f6',linewidth=.5, zorder=0)
-    for index in range(0, 5):
-        y_axis_label = y_axis_labels[index] + round(max(tasks_remaining_list)/5)
-        ideal_line = ideal_line_list[index] + (ideal_tasks_remaining/5)
+    for index in range(0, total_sprint_days):
+        y_axis_label = y_axis_labels[index] + round(max(tasks_remaining_list)/total_sprint_days)
+        ideal_line = ideal_line_list[index] + (ideal_tasks_remaining/total_sprint_days)
         y_axis_labels.append(y_axis_label)
         ideal_line_list.append(ideal_line)
         ax.axhline(y=y_axis_labels[index],color='#d0e2f6',linewidth=.5, zorder=0)
-
 
     ax.set_xticks(x_axis)
     ax.set_xticklabels(x_axis_label,rotation=40,ha='right')
@@ -435,11 +436,6 @@ def create_chart(sprint_data, board_id):
     ax.spines['right'].set_visible(False)
     ax.spines['bottom'].set_visible(False)
     ax.spines['left'].set_visible(False)
-
-    m = 0.25 * ideal_tasks_remaining
-    y_axis= []
-    for x_axis_int in x_axis:
-        y_axis.append(ideal_tasks_remaining - (m * x_axis_int))
 
     plt.tick_params(
         axis='both',       # changes apply to the x-axis
@@ -502,15 +498,19 @@ def delete_chart(client, card_id, board_id):
         try:
             chart_attachment_data = json.load(open('/tmp/chart_attachment_data.json', 'r'))
             current_date = datetime.datetime.now(cst_timezone).strftime("%Y-%m-%d")
-            attachment_id = chart_attachment_data[board_id][current_date]['previous_attachment_id']
+            attachment_id_list = chart_attachment_data[board_id][current_date]['previous_attachment_id']
 
-            return client.fetch_json(
-                f"cards/{card_id}/attachments/{attachment_id}",
-                http_method="DELETE",
-                headers = {
-                        "Accept": "application/json"
-                }
-            )
+            print(attachment_id_list)
+            for attachment_id in attachment_id_list:
+                response = client.fetch_json(
+                    f"cards/{card_id}/attachments/{attachment_id}",
+                    http_method="DELETE",
+                    headers = {
+                            "Accept": "application/json"
+                    }
+                )
+                print(response)
+            attachment_id_list.clear()
         except Exception as error:
             print(error)
             pass
@@ -529,6 +529,7 @@ def attach_chart(client, start_day, card_id, board_id):
     :return: returns None
     """
     chart_attachment_data = {}
+    attachment_id_list = []
     current_day = datetime.datetime.now(cst_timezone).strftime("%A")
     current_date = datetime.datetime.now(cst_timezone).strftime("%Y-%m-%d")
     image_path = '/tmp/' + current_date + '_Sprint_Burndown_Chart_' + board_id + '.png'
@@ -548,6 +549,7 @@ def attach_chart(client, start_day, card_id, board_id):
 
         if os.path.isfile('/tmp/chart_attachment_data.json'):
             chart_attachment_data = json.load(open('/tmp/chart_attachment_data.json', 'r'))
+            attachment_id_list.extend(chart_attachment_data[board_id][current_date]['previous_attachment_id'])
         else:
             with open('/tmp/chart_attachment_data.json', "w") as chart_attachment_data_file:
                 json.dump({}, chart_attachment_data_file)
@@ -559,7 +561,7 @@ def attach_chart(client, start_day, card_id, board_id):
             chart_attachment_data[board_id].update(
                 {
                     current_date: {
-                        'previous_attachment_id': attachment_response['id']
+                        'previous_attachment_id': attachment_id_list.append(attachment_response['id'])
                     }
                 }
             )
@@ -567,7 +569,7 @@ def attach_chart(client, start_day, card_id, board_id):
             chart_attachment_data[board_id].update(
                 {
                     current_date: {
-                        'previous_attachment_id': attachment_response['id']
+                        'previous_attachment_id': attachment_id_list.append(attachment_response['id'])
                     }
                 }
             )
@@ -601,109 +603,115 @@ def trelloSprintBurndown(event, context):
             token=TRELLO_TOKEN
     )
 
-    existing_webhooks = client.list_hooks(TRELLO_TOKEN)
-
-    # Create Webhook for Trello Organization
-    print(client.create_hook(CALLBACK_URL, TRELLO_ORGANIZATION_ID, "Trello Organiztion Webhook", TRELLO_TOKEN))
-
-    # Create Webhook for Exisiting Boards
-    print(create_existing_boards_hook(client, existing_webhooks))
-
     print(type(event))
     print(event)
+
+    existing_webhooks = client.list_hooks(TRELLO_TOKEN)
 
     # S3 Client
     s3 = boto3.resource('s3')
 
     if event:
-        payload = json.loads(event['payload'])
+        if datetime.datetime.now(cst_timezone).strftime("%A") not in ('Saturday', 'Sunday'):
+            payload = json.loads(event['payload'])
 
-        # Create Webhook for new board
-        if payload['action']['type'] == 'addToOrganizationBoard':
-            print(create_new_board_hook(client, payload, existing_webhooks))
+            board_id = payload['action']['data']['board']['id']
 
-        if payload['action']['type'] in ('updateCard', 'createCard'):
-            # Download Sprint data and Card Attachment data files from S3
-            try:
-                s3.Bucket(DEPLOYMENT_BUCKET).download_file(sprint_data_file_name, '/tmp/' + sprint_data_file_name)
-                s3.Bucket(DEPLOYMENT_BUCKET).download_file(chart_attachment_data_file_name, '/tmp/' + chart_attachment_data_file_name)
-            except Exception as e:
-                print(e)
-                pass
+            # Create Webhook for new board
+            if payload['action']['type'] == 'addToOrganizationBoard':
+                print(create_new_board_hook(client, payload, existing_webhooks))
 
-            # Get PowerUp Data
-            powerup_data = get_powerup_data(client, payload['action']['data']['board']['id'])
-
-            # Check PowerUp Data exists
-            if powerup_data is not None:
-                print(json.loads(powerup_data))
-
-                sprint_start_day = json.loads(powerup_data)['sprint_start_day']
-
-                # Get monitor lists
-                monitor_lists = json.loads(powerup_data)['selected_list']
-
-                # Get counts of Stories/Tasks
-                stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining = get_counts(client, payload, monitor_lists, sprint_start_day)
-
-                print(f'Stories Remaining: {stories_defects_remaining}')
-                print(f'Stories Done: {stories_defects_done}')
-                print(f'Tasks Remaining: {tasks_remaining}')
-                print(f'Ideal Tasks Remaining: {ideal_tasks_remaining}')
-                print(payload['action']['data']['board']['id'])
-
-                # CST Current Time
-                print(datetime.datetime.now(cst_timezone))
-
-                # CST Day and Date
-                print(datetime.datetime.now(cst_timezone).strftime("%A"))
-                print(datetime.datetime.now(cst_timezone).strftime("%Y-%m-%d"))
-
-                # Current Sprint Dates
-                sprint_dates = get_sprint_dates(sprint_start_day, 4, payload['action']['data']['board']['id'])
-
-                print(sprint_dates)
-
-                print(f'Start Date: {sprint_dates[0]} End Date: {sprint_dates[len(sprint_dates)-1]}')
-
-                # Get Organization members Out of Office
-                org_members_ooo = get_org_members_ooo(BAMBOOHR_API_TOKEN, BAMBOOHR_ORG_NAME, sprint_dates[0], sprint_dates[len(sprint_dates)-1])
-
-                team_members = json.loads(powerup_data)['team_member_list']
-                team_size = len(team_members)
-
-                # Get Team members Out of Office
-                team_members_ooo = []
-                for team_member in team_members:
-                    for org_member_ooo in org_members_ooo:
-                        regex = r".*(?i)({}).*".format(team_member)
-                        if bool(re.match(regex, org_member_ooo)):
-                            team_members_ooo.append(team_member)
-
-                # Update sprint data
-                sprint_data = update_sprint_data(sprint_start_day, payload['action']['data']['board']['id'], sprint_dates, stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining, team_size, len(team_members_ooo))
-
-                print(sprint_data)
-
-                # Create Sprint Burndown Chart
-                create_chart(sprint_data, payload['action']['data']['board']['id'])
-
-                attachment_card_id = json.loads(powerup_data)['selected_card_for_attachment']
-
-                # Delete previously attached Chart from the card
-                delete_chart(client, attachment_card_id, payload['action']['data']['board']['id'])
-
-                # Attach Chart to Card
-                attach_chart(client, sprint_start_day, attachment_card_id, payload['action']['data']['board']['id'])
-
-                # Upload Sprint data and Card Attachment data files from S3
+            if payload['action']['type'] in ('updateCard', 'createCard'):
+                # Download Sprint data and Card Attachment data files from S3
                 try:
-                    s3.Object(DEPLOYMENT_BUCKET, sprint_data_file_name).put(Body=open('/tmp/' + sprint_data_file_name, 'rb'))
-                    s3.Object(DEPLOYMENT_BUCKET, chart_attachment_data_file_name).put(Body=open('/tmp/' + chart_attachment_data_file_name, 'rb'))
+                    s3.Bucket(DEPLOYMENT_BUCKET).download_file(sprint_data_file_name, '/tmp/' + sprint_data_file_name)
+                    s3.Bucket(DEPLOYMENT_BUCKET).download_file(chart_attachment_data_file_name, '/tmp/' + chart_attachment_data_file_name)
                 except Exception as e:
                     print(e)
                     pass
 
-                print(json.load(open('/tmp/sprint_data.json', 'r')))
+                # Get PowerUp Data
+                powerup_data = get_powerup_data(client, board_id)
 
-                print(json.load(open('/tmp/chart_attachment_data.json', 'r')))
+                # Check PowerUp Data exists
+                if powerup_data is not None:
+                    print(json.loads(powerup_data))
+
+                    sprint_start_day = json.loads(powerup_data)['sprint_start_day']
+                    total_sprint_days = json.loads(powerup_data)['total_sprint_days']
+
+                    # Get monitor lists
+                    monitor_lists = json.loads(powerup_data)['selected_list']
+
+                    # Get counts of Stories/Tasks
+                    stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining = get_counts(client, payload, monitor_lists, sprint_start_day)
+
+                    print(f'Stories Remaining: {stories_defects_remaining}')
+                    print(f'Stories Done: {stories_defects_done}')
+                    print(f'Tasks Remaining: {tasks_remaining}')
+                    print(f'Ideal Tasks Remaining: {ideal_tasks_remaining}')
+                    print(board_id)
+
+                    # CST Current Time
+                    print(datetime.datetime.now(cst_timezone))
+
+                    # CST Day and Date
+                    print(datetime.datetime.now(cst_timezone).strftime("%A"))
+                    print(datetime.datetime.now(cst_timezone).strftime("%Y-%m-%d"))
+
+                    # Current Sprint Dates
+                    sprint_dates = get_sprint_dates(sprint_start_day, (total_sprint_days - 1), board_id)
+
+                    print(sprint_dates)
+
+                    print(f'Start Date: {sprint_dates[0]} End Date: {sprint_dates[len(sprint_dates)-1]}')
+
+                    # Get Organization members Out of Office
+                    org_members_ooo = get_org_members_ooo(BAMBOOHR_API_TOKEN, BAMBOOHR_ORG_NAME, sprint_dates[0], sprint_dates[len(sprint_dates)-1])
+
+                    team_members = json.loads(powerup_data)['team_member_list']
+                    team_size = len(team_members)
+
+                    # Get Team members Out of Office
+                    team_members_ooo = []
+                    for team_member in team_members:
+                        for org_member_ooo in org_members_ooo:
+                            member_sequence = SequenceMatcher(a=team_member, b=org_member_ooo)
+                            print(f'Team Member Compare ratio: {member_sequence.ratio()}')
+                            if member_sequence.ratio() >= 0.3:
+                                print(member_sequence.ratio())
+                                team_members_ooo.append(team_member)
+
+                    # Update sprint data
+                    sprint_data = update_sprint_data(sprint_start_day, board_id, sprint_dates, stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining, team_size, len(team_members_ooo))
+
+                    print(sprint_data)
+
+                    # Create Sprint Burndown Chart
+                    create_chart(sprint_data, total_sprint_days, board_id)
+
+                    attachment_card_id = json.loads(powerup_data)['selected_card_for_attachment']
+
+                    # Delete previously attached Chart from the card
+                    delete_chart(client, attachment_card_id, board_id)
+
+                    # Attach Chart to Card
+                    attach_chart(client, sprint_start_day, attachment_card_id, board_id)
+
+                    # Upload Sprint data and Card Attachment data files from S3
+                    try:
+                        s3.Object(DEPLOYMENT_BUCKET, sprint_data_file_name).put(Body=open('/tmp/' + sprint_data_file_name, 'rb'))
+                        s3.Object(DEPLOYMENT_BUCKET, chart_attachment_data_file_name).put(Body=open('/tmp/' + chart_attachment_data_file_name, 'rb'))
+                    except Exception as e:
+                        print(e)
+                        pass
+
+                    print(json.load(open('/tmp/sprint_data.json', 'r')))
+
+                    print(json.load(open('/tmp/chart_attachment_data.json', 'r')))
+    else:
+        # Create Webhook for Trello Organization
+        print(client.create_hook(CALLBACK_URL, TRELLO_ORGANIZATION_ID, "Trello Organiztion Webhook", TRELLO_TOKEN))
+
+        # Create Webhook for Exisiting Boards
+        print(create_existing_boards_hook(client, existing_webhooks))
