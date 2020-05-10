@@ -382,7 +382,7 @@ def get_org_members_ooo(api_token, org_name, start_date, end_date):
 
 
 # Create Sprint Burndown Chart
-def create_chart(sprint_data, total_sprint_days, board_id):
+def create_chart(sprint_data, total_sprint_days, board_id, team_members):
     """
     Creates Sprint Burndown Chart
     :param sprint_data: The Sprint Data
@@ -483,6 +483,13 @@ def create_chart(sprint_data, total_sprint_days, board_id):
         plt.annotate(xy=[index, team_size_list[index]], s=str(team_size_list[index]), color='#ff9f68', size=6, ha='center', va='bottom', textcoords="offset points", xytext=(2, 3))
 
     plt.title("Sprint Burndown Chart")
+
+    on_team_for_sprint = ['On Team for Sprint', '\n']
+
+    on_team_for_sprint.extend(team_members)
+
+    plt.text(.02, 0.1, "\n".join(on_team_for_sprint), fontsize=5, transform=plt.gcf().transFigure)
+    plt.subplots_adjust(left=0.2)
 
     plt.legend([p1,p2,p3, p4, p5, p6], ["Ideal Tasks Remaining","Tasks Remaining","Stories/Defects Remaining", "Stories/Defects Done", "Team Members OOO","Team Size"], loc=1, borderaxespad=0,fontsize=6).get_frame().set_alpha(0.5)
 
@@ -687,7 +694,7 @@ def trelloSprintBurndown(event, context):
                     print(sprint_data)
 
                     # Create Sprint Burndown Chart
-                    create_chart(sprint_data, total_sprint_days, board_id)
+                    create_chart(sprint_data, total_sprint_days, board_id, team_members)
 
                     attachment_card_id = json.loads(powerup_data)['selected_card_for_attachment']
 
