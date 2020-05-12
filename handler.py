@@ -69,7 +69,6 @@ current_date = datetime.datetime.now(cst_timezone).strftime("%Y-%m-%d")
 
 # Setting Sprint Data and Chart Attachement Response Data File names
 sprint_data_file_name = 'sprint_data.json'
-chart_attachment_data_file_name = 'chart_attachment_data.json'
 
 # Boto3 SSM module
 ssm = boto3.client('ssm')
@@ -497,49 +496,45 @@ def create_chart(sprint_data, total_sprint_days, board_id, team_members):
 
 
 # Delete previously attached Chart from the card
-def delete_chart(client, card_id, board_id):
+def delete_chart(client, card_id):
     """
     Deletes already existing Sprint Burndown chart
     :param client: Trello client Object
     :param card_id: The ID of the Card
-    :param board_id: The ID of the Board
     :return: returns None
     """
-    if os.path.isfile('/tmp/chart_attachment_data.json'):
-        try:
-            chart_attachment_data = json.load(open('/tmp/chart_attachment_data.json', 'r'))
-            attachment_id_list = chart_attachment_data[board_id][current_date]['previous_attachment_id']
-
-            print(attachment_id_list)
-            for attachment_id in attachment_id_list:
-                response = client.fetch_json(
-                    f"cards/{card_id}/attachments/{attachment_id}",
-                    http_method="DELETE",
-                    headers = {
-                            "Accept": "application/json"
-                    }
-                )
-                print(response)
-            attachment_id_list.clear()
-        except Exception as error:
-            print(error)
-            pass
-    else:
-        print('Previously attached chart data file not found')
+    try:
+        card_attachments = client.fetch_json(
+            f"cards/{card_id}/attachments",
+            http_method="GET",
+            headers = {
+                    "Accept": "application/json"
+                }
+        )
+        for card_attachment in card_attachments:
+            if current_date in card_attachment['name']:
+                print(card_attachment['name'])
+                client.fetch_json(
+                        f"cards/{card_id}/attachments/{card_attachment['id']}",
+                        http_method="DELETE",
+                        headers = {
+                                "Accept": "application/json"
+                        }
+                    )
+    except Exception as error:
+        print(error)
+        pass
 
 
 # Attach Chart to the Card
-def attach_chart(client, start_day, card_id, board_id):
+def attach_chart(client, card_id, board_id):
     """
     Attaches Sprint Burndown chart to a card
     :param client: Trello client Object
-    :param start_day: Start day of the Sprint. Eg: Monday
     :param card_id: The ID of the Card
     :param board_id: The ID of the Board
     :return: returns None
     """
-    chart_attachment_data = {}
-    attachment_id_list = []
     image_path = '/tmp/' + current_date + '_Sprint_Burndown_Chart_' + board_id + '.png'
     try:
         attachment_response = client.fetch_json(
@@ -552,40 +547,8 @@ def attach_chart(client, start_day, card_id, board_id):
                     "Accept": "application/json"
             }
         )
-
-        print(attachment_response['id'])
-
-        if os.path.isfile('/tmp/chart_attachment_data.json'):
-            chart_attachment_data = json.load(open('/tmp/chart_attachment_data.json', 'r'))
-            attachment_id_list.extend(chart_attachment_data[board_id][current_date]['previous_attachment_id'])
-        else:
-            with open('/tmp/chart_attachment_data.json', "w") as chart_attachment_data_file:
-                json.dump({}, chart_attachment_data_file)
-            chart_attachment_data_file.close()
-
-        # Update Chart Attachment Data in json file
-        if current_day == start_day:
-            chart_attachment_data.update({ board_id: {} })
-            chart_attachment_data[board_id].update(
-                {
-                    current_date: {
-                        'previous_attachment_id': attachment_id_list.append(attachment_response['id'])
-                    }
-                }
-            )
-        else:
-            chart_attachment_data[board_id].update(
-                {
-                    current_date: {
-                        'previous_attachment_id': attachment_id_list.append(attachment_response['id'])
-                    }
-                }
-            )
-        with open('/tmp/chart_attachment_data.json', "w") as chart_attachment_data_file:
-            json.dump(chart_attachment_data, chart_attachment_data_file)
-        chart_attachment_data_file.close()
-    except Exception as e:
-        print(e)
+    except Exception as error:
+        print(error)
         pass
 
 
@@ -638,7 +601,6 @@ def trelloSprintBurndown(event, context):
                 # Download Sprint data and Card Attachment data files from S3
                 try:
                     s3.Bucket(DEPLOYMENT_BUCKET).download_file(sprint_data_file_name, '/tmp/' + sprint_data_file_name)
-                    s3.Bucket(DEPLOYMENT_BUCKET).download_file(chart_attachment_data_file_name, '/tmp/' + chart_attachment_data_file_name)
                 except Exception as e:
                     print(e)
                     pass
@@ -651,7 +613,7 @@ def trelloSprintBurndown(event, context):
                     print(json.loads(powerup_data))
 
                     sprint_start_day = json.loads(powerup_data)['sprint_start_day']
-                    total_sprint_days = json.loads(powerup_data)['total_sprint_days']
+                    total_sprint_days = int(json.loads(powerup_data)['total_sprint_days'])
 
                     # Get monitor lists
                     monitor_lists = json.loads(powerup_data)['selected_list']
@@ -699,22 +661,19 @@ def trelloSprintBurndown(event, context):
                     attachment_card_id = json.loads(powerup_data)['selected_card_for_attachment']
 
                     # Delete previously attached Chart from the card
-                    delete_chart(client, attachment_card_id, board_id)
+                    delete_chart(client, attachment_card_id)
 
                     # Attach Chart to Card
-                    attach_chart(client, sprint_start_day, attachment_card_id, board_id)
+                    attach_chart(client, attachment_card_id, board_id)
 
                     # Upload Sprint data and Card Attachment data files from S3
                     try:
                         s3.Object(DEPLOYMENT_BUCKET, sprint_data_file_name).put(Body=open('/tmp/' + sprint_data_file_name, 'rb'))
-                        s3.Object(DEPLOYMENT_BUCKET, chart_attachment_data_file_name).put(Body=open('/tmp/' + chart_attachment_data_file_name, 'rb'))
                     except Exception as e:
                         print(e)
                         pass
 
                     print(json.load(open('/tmp/sprint_data.json', 'r')))
-
-                    print(json.load(open('/tmp/chart_attachment_data.json', 'r')))
     else:
         # Create Webhook for Trello Organization
         print(client.create_hook(CALLBACK_URL, TRELLO_ORGANIZATION_ID, "Trello Organiztion Webhook", TRELLO_TOKEN))
