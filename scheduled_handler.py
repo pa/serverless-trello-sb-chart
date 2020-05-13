@@ -96,24 +96,25 @@ BAMBOOHR_API_TOKEN = format(
     )
 
 
-# Get all Plugins/PowerUps from Board
-def get_plugins(client, board_id):
+# Get Our PowerUp ID from the Board
+def get_plugin_id(client, board_id):
     """
-    Gets Plugin/PowerUp data from the board
+    Gets Our PowerUp ID from the Board
     :param client: Trello client Object
     :param board_id: The ID of the Board
     :return: returns Plugin/PowerUp Value
     """
-    return client.fetch_json(
-        f"boards/{board_id}/pluginData",
+    plugins =  client.fetch_json(
+        f"boards/{board_id}/plugins",
         http_method="GET",
         headers = {
                 "Accept": "application/json"
         },
-        query_params={
-            'name': POWERUP_NAME
-        }
     )
+
+    for plugin in plugins:
+        if plugin['name'] == POWERUP_NAME:
+            return plugin['id']
 
 
 # Get all Enabled PowerUps from the Board
@@ -144,13 +145,23 @@ def get_powerup_data(client, board_id):
     # Get Enabled PowerUps in the Board
     enabled_powerups_list = []
     enabled_powerups_data = enabled_powerups(client, board_id)
-    [enabled_powerups_list.append(enabled_powerup['idPlugin']) for enabled_powerup in enabled_powerups_data]
+    plugin_id = get_plugin_id(client, board_id)
 
-    # Check if our PowerUp Enabled or Not
-    plugins_data = get_plugins(client, board_id)
-    for plugin_data in plugins_data:
-        if plugin_data['idPlugin'] in enabled_powerups_list:
-            return plugin_data['value']
+    for enabled_powerup in enabled_powerups_data:
+        # Check if our PowerUp Enabled or Not
+        if plugin_id == enabled_powerup['idPlugin']:
+            plugin_data = client.fetch_json(
+                f"boards/{board_id}/pluginData",
+                http_method="GET",
+                headers = {
+                        "Accept": "application/json"
+                },
+                query_params={
+                    'idPlugin': plugin_id
+                }
+            )
+
+            return plugin_data[0]['value']
 
 
 # Get Stories and Tasks Counts
@@ -402,8 +413,8 @@ def create_chart(sprint_data, total_sprint_days, board_id, team_members):
     plt.fill_between(np.arange(len(team_size_list)), 0, team_size_list, color='#ff9f68', alpha=0.5, lw=0)
 
     p6, = plt.plot(np.arange(len(team_size_list)),team_size_list,'k--',color='#ff9f68', label='line 1',zorder=1)
-    p3 = plt.bar(np.arange(len(stories_defects_remaining_list)), stories_defects_remaining_list, color='#c5e3f6',width=.25,align='edge',zorder=2)
-    p4 = plt.bar(np.arange(len(stories_defects_done_list)), stories_defects_done_list, color='#17b978',width=-.25,align='edge', zorder=2)
+    p3 = plt.bar(np.arange(len(stories_defects_remaining_list)), stories_defects_remaining_list, color='#c5e3f6',width=-.25,align='edge',zorder=2)
+    p4 = plt.bar(np.arange(len(stories_defects_done_list)), stories_defects_done_list, color='#17b978',width=.25,align='edge', zorder=2)
     p5 = plt.bar(np.arange(len(members_ooo_count_list)) -.5, members_ooo_count_list, color='#ffcef3',width=.25,align='edge', zorder=2)
     p1, = plt.plot(x_axis,[element for element in reversed(ideal_line_list)],'k',label='line 3',linewidth=.7, zorder=4)
     p2, = plt.plot(np.arange(len(tasks_remaining_list)),tasks_remaining_list,'--',color='#482ff7', label='line 1', zorder=5)

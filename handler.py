@@ -465,8 +465,8 @@ def create_chart(sprint_data, total_sprint_days, board_id, team_members):
     plt.fill_between(np.arange(len(team_size_list)), 0, team_size_list, color='#ff9f68', alpha=0.5, lw=0)
 
     p6, = plt.plot(np.arange(len(team_size_list)),team_size_list,'k--',color='#ff9f68', label='line 1',zorder=1)
-    p3 = plt.bar(np.arange(len(stories_defects_remaining_list)), stories_defects_remaining_list, color='#c5e3f6',width=.25,align='edge',zorder=2)
-    p4 = plt.bar(np.arange(len(stories_defects_done_list)), stories_defects_done_list, color='#17b978',width=-.25,align='edge', zorder=2)
+    p3 = plt.bar(np.arange(len(stories_defects_remaining_list)), stories_defects_remaining_list, color='#c5e3f6',width=-.25,align='edge',zorder=2)
+    p4 = plt.bar(np.arange(len(stories_defects_done_list)), stories_defects_done_list, color='#17b978',width=.25,align='edge', zorder=2)
     p5 = plt.bar(np.arange(len(members_ooo_count_list)) -.5, members_ooo_count_list, color='#ffcef3',width=.25,align='edge', zorder=2)
     p1, = plt.plot(x_axis,[element for element in reversed(ideal_line_list)],'k',label='line 3',linewidth=.7, zorder=4)
     p2, = plt.plot(np.arange(len(tasks_remaining_list)),tasks_remaining_list,'--',color='#482ff7', label='line 1', zorder=5)
