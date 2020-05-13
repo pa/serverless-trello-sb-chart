@@ -96,24 +96,25 @@ BAMBOOHR_API_TOKEN = format(
     )
 
 
-# Get all Plugins/PowerUps from Board
-def get_plugins(client, board_id):
+# Get Our PowerUp ID from the Board
+def get_plugin_id(client, board_id):
     """
-    Gets Plugin/PowerUp data from the board
+    Gets Our PowerUp ID from the Board
     :param client: Trello client Object
     :param board_id: The ID of the Board
     :return: returns Plugin/PowerUp Value
     """
-    return client.fetch_json(
-        f"boards/{board_id}/pluginData",
+    plugins =  client.fetch_json(
+        f"boards/{board_id}/plugins",
         http_method="GET",
         headers = {
                 "Accept": "application/json"
         },
-        query_params={
-            'name': POWERUP_NAME
-        }
     )
+
+    for plugin in plugins:
+        if plugin['name'] == POWERUP_NAME:
+            return plugin['id']
 
 
 # Get all Enabled PowerUps from the Board
@@ -144,13 +145,23 @@ def get_powerup_data(client, board_id):
     # Get Enabled PowerUps in the Board
     enabled_powerups_list = []
     enabled_powerups_data = enabled_powerups(client, board_id)
-    [enabled_powerups_list.append(enabled_powerup['idPlugin']) for enabled_powerup in enabled_powerups_data]
+    plugin_id = get_plugin_id(client, board_id)
 
-    # Check if our PowerUp Enabled or Not
-    plugins_data = get_plugins(client, board_id)
-    for plugin_data in plugins_data:
-        if plugin_data['idPlugin'] in enabled_powerups_list:
-            return plugin_data['value']
+    for enabled_powerup in enabled_powerups_data:
+        # Check if our PowerUp Enabled or Not
+        if plugin_id == enabled_powerup['idPlugin']:
+            plugin_data = client.fetch_json(
+                f"boards/{board_id}/pluginData",
+                http_method="GET",
+                headers = {
+                        "Accept": "application/json"
+                },
+                query_params={
+                    'idPlugin': plugin_id
+                }
+            )
+
+            return plugin_data[0]['value']
 
 
 # Create Webhook for Existing Organization Boards

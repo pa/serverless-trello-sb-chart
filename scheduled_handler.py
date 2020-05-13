@@ -552,67 +552,71 @@ def trelloSprintBurndown(event, context):
             if powerup_data is not None:
                 print(json.loads(powerup_data))
 
-                sprint_start_day = json.loads(powerup_data)['sprint_start_day']
-                total_sprint_days = int(json.loads(powerup_data)['total_sprint_days'])
-
-                # Get monitor lists
-                monitor_lists = json.loads(powerup_data)['selected_list']
-
-                # Get counts of Stories/Tasks
-                stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining = get_counts(client, board.id, monitor_lists, sprint_start_day)
-
-                print(f'Stories Remaining: {stories_defects_remaining}')
-                print(f'Stories Done: {stories_defects_done}')
-                print(f'Tasks Remaining: {tasks_remaining}')
-                print(f'Ideal Tasks Remaining: {ideal_tasks_remaining}')
-                print(board.id)
-
-                # Current Sprint Dates
-                sprint_dates = get_sprint_dates(sprint_start_day, (total_sprint_days - 1), board.id)
-
-                print(sprint_dates)
-
-                print(f'Start Date: {sprint_dates[0]} End Date: {sprint_dates[len(sprint_dates)-1]}')
-
-                # Get Organization members Out of Office
-                org_members_ooo = get_org_members_ooo(BAMBOOHR_API_TOKEN, BAMBOOHR_ORG_NAME, sprint_dates[0], sprint_dates[len(sprint_dates)-1])
-
-                team_members = json.loads(powerup_data)['team_member_list']
-                team_size = len(team_members)
-
-                # Get Team members Out of Office
-                team_members_ooo = []
-                for team_member in team_members:
-                    for org_member_ooo in org_members_ooo:
-                        member_sequence = SequenceMatcher(a=team_member, b=org_member_ooo)
-                        print(f'Team Member Compare ratio: {member_sequence.ratio()}')
-                        if member_sequence.ratio() >= 0.3:
-                            print(member_sequence.ratio())
-                            team_members_ooo.append(team_member)
-
-                # Update sprint data
-                sprint_data = update_sprint_data(sprint_start_day, board.id, sprint_dates, stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining, team_size, len(team_members_ooo))
-
-                print(sprint_data)
-
-                # Create Sprint Burndown Chart
-                create_chart(sprint_data, total_sprint_days, board.id, team_members)
-
-                attachment_card_id = json.loads(powerup_data)['selected_card_for_attachment']
-
-                # Delete previously attached Chart from the card
-                delete_chart(client, attachment_card_id)
-
-                # Attach Chart to Card
-                attach_chart(client, attachment_card_id, board.id)
-
-                # Upload Sprint data and Card Attachment data files from S3
                 try:
-                    s3.Object(DEPLOYMENT_BUCKET, sprint_data_file_name).put(Body=open('/tmp/' + sprint_data_file_name, 'rb'))
-                except Exception as e:
-                    print(e)
-                    pass
+                    sprint_start_day = json.loads(powerup_data)['sprint_start_day']
+                    total_sprint_days = int(json.loads(powerup_data)['total_sprint_days'])
 
-                print(json.load(open('/tmp/sprint_data.json', 'r')))
+                    # Get monitor lists
+                    monitor_lists = json.loads(powerup_data)['selected_list']
 
-                success()
+                    # Get counts of Stories/Tasks
+                    stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining = get_counts(client, board.id, monitor_lists, sprint_start_day)
+
+                    print(f'Stories Remaining: {stories_defects_remaining}')
+                    print(f'Stories Done: {stories_defects_done}')
+                    print(f'Tasks Remaining: {tasks_remaining}')
+                    print(f'Ideal Tasks Remaining: {ideal_tasks_remaining}')
+                    print(board.id)
+
+                    # Current Sprint Dates
+                    sprint_dates = get_sprint_dates(sprint_start_day, (total_sprint_days - 1), board.id)
+
+                    print(sprint_dates)
+
+                    print(f'Start Date: {sprint_dates[0]} End Date: {sprint_dates[len(sprint_dates)-1]}')
+
+                    # Get Organization members Out of Office
+                    org_members_ooo = get_org_members_ooo(BAMBOOHR_API_TOKEN, BAMBOOHR_ORG_NAME, sprint_dates[0], sprint_dates[len(sprint_dates)-1])
+
+                    team_members = json.loads(powerup_data)['team_member_list']
+                    team_size = len(team_members)
+
+                    # Get Team members Out of Office
+                    team_members_ooo = []
+                    for team_member in team_members:
+                        for org_member_ooo in org_members_ooo:
+                            member_sequence = SequenceMatcher(a=team_member, b=org_member_ooo)
+                            print(f'Team Member Compare ratio: {member_sequence.ratio()}')
+                            if member_sequence.ratio() >= 0.3:
+                                print(member_sequence.ratio())
+                                team_members_ooo.append(team_member)
+
+                    # Update sprint data
+                    sprint_data = update_sprint_data(sprint_start_day, board.id, sprint_dates, stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining, team_size, len(team_members_ooo))
+
+                    print(sprint_data)
+
+                    # Create Sprint Burndown Chart
+                    create_chart(sprint_data, total_sprint_days, board.id, team_members)
+
+                    attachment_card_id = json.loads(powerup_data)['selected_card_for_attachment']
+
+                    # Delete previously attached Chart from the card
+                    delete_chart(client, attachment_card_id)
+
+                    # Attach Chart to Card
+                    attach_chart(client, attachment_card_id, board.id)
+
+                    # Upload Sprint data and Card Attachment data files from S3
+                    try:
+                        s3.Object(DEPLOYMENT_BUCKET, sprint_data_file_name).put(Body=open('/tmp/' + sprint_data_file_name, 'rb'))
+                    except Exception as e:
+                        print(e)
+                        pass
+
+                    print(json.load(open('/tmp/sprint_data.json', 'r')))
+
+                    success()
+                except Exception as error:
+                    print(error)
+                    continue
