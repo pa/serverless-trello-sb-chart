@@ -36,16 +36,6 @@ except Exception:
     print('Trello Organization ID missing in Lambda Environment Variable')
 
 try:
-    BAMBOOHR_API_TOKEN_SSM_PARAMETER_KEY = os.getenv('BAMBOOHR_API_TOKEN_SSM_PARAMETER_KEY')
-except Exception:
-    BAMBOOHR_API_TOKEN_SSM_PARAMETER_KEY = '/Serverless/BambooHR/ApiToken'
-
-try:
-    BAMBOOHR_ORG_NAME = os.getenv('BAMBOOHR_ORG_NAME')
-except Exception:
-    print('BambooHR Organization Name value missing in Lambda Environment Variable')
-
-try:
     CALLBACK_URL = os.getenv('CALLBACK_URL')
 except Exception:
     print('CALLBACK_URL value missing in Lambda Environment Variable')
@@ -84,13 +74,6 @@ TRELLO_API_KEY = format(
 TRELLO_TOKEN = format(
     ssm.get_parameter(
         Name=TRELLO_TOKEN_SSM_PARAMETER_KEY,
-        WithDecryption=True
-        )['Parameter']['Value']
-    )
-
-BAMBOOHR_API_TOKEN = format(
-    ssm.get_parameter(
-        Name=BAMBOOHR_API_TOKEN_SSM_PARAMETER_KEY,
         WithDecryption=True
         )['Parameter']['Value']
     )
@@ -301,7 +284,7 @@ def get_sprint_dates(start_day, total_sprint_days, board_id):
 
 
 # Create/Update Sprint Data
-def update_sprint_data(start_day, board_id, sprint_dates, stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining, team_size, team_members_ooo_count):
+def update_sprint_data(start_day, board_id, sprint_dates, stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining, team_size):
     """
     Create/Update Sprint Data to Json file
     :param start_day: Start day of the Sprint. Eg: Monday
@@ -327,14 +310,13 @@ def update_sprint_data(start_day, board_id, sprint_dates, stories_defects_remain
     if current_day == start_day:
         sprint_data.update({ board_id: {} })
         for sprint_date in sprint_dates:
-            sprint_data[board_id].update( { 'ideal_tasks_remaining': 0, sprint_date: { 'stories_defects_remaining': 0, 'stories_defects_done': 0, 'team_members_ooo_count': 0 } } )
+            sprint_data[board_id].update( { 'ideal_tasks_remaining': 0, sprint_date: { 'stories_defects_remaining': 0, 'stories_defects_done': 0 } } )
         sprint_data[board_id].update( {
                 'ideal_tasks_remaining': ideal_tasks_remaining,
                 current_date: {
                 'stories_defects_remaining': stories_defects_remaining,
                 'stories_defects_done': stories_defects_done,
                 'tasks_remaining': tasks_remaining,
-                'team_members_ooo_count': team_members_ooo_count,
                 'team_size': team_size
                 }
             }
@@ -345,7 +327,6 @@ def update_sprint_data(start_day, board_id, sprint_dates, stories_defects_remain
                 'stories_defects_remaining': stories_defects_remaining,
                 'stories_defects_done': stories_defects_done,
                 'tasks_remaining': tasks_remaining,
-                'team_members_ooo_count': team_members_ooo_count,
                 'team_size': team_size
                 }
             }
@@ -357,53 +338,20 @@ def update_sprint_data(start_day, board_id, sprint_dates, stories_defects_remain
     return sprint_data
 
 
-# Get Organization members Out Of Office
-def get_org_members_ooo(api_token, org_name, start_date, end_date):
-    """
-    Gets Organization Memnber Out Of Office
-    :param api_token: API Token for connecting BambooHR. To generate an API key, users should log in and click their name in the upper right-hand corner of any page to get to the user context menu
-    :param org_name: BambooHR Organization Name
-    :param start_date: A start date in the form YYYY-MM-DD
-    :param end_date: A end date in the form YYYY-MM-DD
-    :return: returns List of Organization Members OOO and Count
-    """
-    url = 'https://{0}:x@api.bamboohr.com/api/gateway.php/{1}/v1/time_off/whos_out/'.format(api_token, org_name)
-
-    querystring = {
-        "start": start_date,
-        "end": end_date
-        }
-
-    headers = {
-        'accept': "application/json"
-        }
-
-    response = requests.request("GET", url, headers=headers, params=querystring)
-    org_members = response.json()
-    org_members_ooo_array = []
-    for org_member in org_members:
-        if org_member['type'] == 'timeOff':
-            org_members_ooo_array.append(org_member['name'])
-        elif org_member['type'] == 'holiday':
-            continue
-    org_members_ooo = list(dict.fromkeys(org_members_ooo_array))
-
-    return org_members_ooo
-
-
 # Create Sprint Burndown Chart
-def create_chart(sprint_data, total_sprint_days, board_id, team_members):
+def create_chart(sprint_data, total_sprint_days, board_id, team_members, team_members_days_ooo, is_show_team_size):
     """
     Creates Sprint Burndown Chart
     :param sprint_data: The Sprint Data
     :param board_id: The ID of the Board
+    :param team_members: Team members on Team for Sprint
+    :param team_members_days_ooo: Team Members Days Out of Office
     :return: returns nothing
     """
     sprint_dates_list = [""]
     stories_defects_remaining_list = [0]
     stories_defects_done_list = [0]
     tasks_remaining_list = []
-    members_ooo_count_list = [0]
     team_size_list = [0]
 
     ideal_tasks_remaining = sprint_data[board_id]['ideal_tasks_remaining']
@@ -416,7 +364,6 @@ def create_chart(sprint_data, total_sprint_days, board_id, team_members):
                 sprint_dates_list.append(key)
                 stories_defects_remaining_list.append(value['stories_defects_remaining'])
                 stories_defects_done_list.append(value['stories_defects_done'])
-                members_ooo_count_list.append(value['team_members_ooo_count'])
                 tasks_remaining_list.append(value['tasks_remaining'])
                 team_size_list.append(value['team_size'])
             except Exception as error:
@@ -461,13 +408,15 @@ def create_chart(sprint_data, total_sprint_days, board_id, team_members):
         pad=4
     )
 
+    if is_show_team_size:
+        plt.fill_between(np.arange(len(team_size_list)), 0, team_size_list, color='#ff9f68', alpha=0.5, lw=0)
+        p6, = plt.plot(np.arange(len(team_size_list)),team_size_list,'k--',color='#ff9f68', label='line 1',zorder=1)
+        for index in range(0, len(team_size_list)):
+            plt.annotate(xy=[index, team_size_list[index]], s=str(team_size_list[index]), color='#ff9f68', size=6, ha='center', va='bottom', textcoords="offset points", xytext=(2, 3))
 
-    plt.fill_between(np.arange(len(team_size_list)), 0, team_size_list, color='#ff9f68', alpha=0.5, lw=0)
-
-    p6, = plt.plot(np.arange(len(team_size_list)),team_size_list,'k--',color='#ff9f68', label='line 1',zorder=1)
     p3 = plt.bar(np.arange(len(stories_defects_remaining_list)), stories_defects_remaining_list, color='#c5e3f6',width=-.25,align='edge',zorder=2)
     p4 = plt.bar(np.arange(len(stories_defects_done_list)), stories_defects_done_list, color='#17b978',width=.25,align='edge', zorder=2)
-    p5 = plt.bar(np.arange(len(members_ooo_count_list)) -.5, members_ooo_count_list, color='#ffcef3',width=.25,align='edge', zorder=2)
+    p5 = plt.bar(np.arange(len(team_members_days_ooo)) -.5, team_members_days_ooo, color='#ffcef3',width=.25,align='edge', zorder=2)
     p1, = plt.plot(x_axis,[element for element in reversed(ideal_line_list)],'k',label='line 3',linewidth=.7, zorder=4)
     p2, = plt.plot(np.arange(len(tasks_remaining_list)),tasks_remaining_list,'--',color='#482ff7', label='line 1', zorder=5)
 
@@ -489,9 +438,6 @@ def create_chart(sprint_data, total_sprint_days, board_id, team_members):
     for index in range(0, len(tasks_remaining_list)):
         plt.annotate(xy=[index, tasks_remaining_list[index]], s=str(tasks_remaining_list[index]), color='#482ff7', size=6, ha='center', va='bottom', textcoords="offset points", xytext=(2, 3))
 
-    for index in range(0, len(team_size_list)):
-        plt.annotate(xy=[index, team_size_list[index]], s=str(team_size_list[index]), color='#ff9f68', size=6, ha='center', va='bottom', textcoords="offset points", xytext=(2, 3))
-
     plt.title("Sprint Burndown Chart")
 
     on_team_for_sprint = ['On Team for Sprint', '\n']
@@ -501,7 +447,10 @@ def create_chart(sprint_data, total_sprint_days, board_id, team_members):
     plt.text(.02, 0.1, "\n".join(on_team_for_sprint), fontsize=5, transform=plt.gcf().transFigure)
     plt.subplots_adjust(left=0.2)
 
-    plt.legend([p1,p2,p3, p4, p5, p6], ["Ideal Tasks Remaining","Tasks Remaining","Stories/Defects Remaining", "Stories/Defects Done", "Team Members OOO","Team Size"], loc=1, borderaxespad=0,fontsize=6).get_frame().set_alpha(0.5)
+    if is_show_team_size:
+        plt.legend([p1,p2,p3, p4, p5, p6], ["Ideal Tasks Remaining","Tasks Remaining","Stories/Defects Remaining", "Stories/Defects Done", "Team Members Days OOO","Team Size"], loc=1, borderaxespad=0,fontsize=6).get_frame().set_alpha(0.5)
+    else:
+        plt.legend([p1,p2,p3, p4, p5], ["Ideal Tasks Remaining","Tasks Remaining","Stories/Defects Remaining", "Stories/Defects Done", "Team Members Days OOO"], loc=1, borderaxespad=0,fontsize=6).get_frame().set_alpha(0.5)
 
     plt.savefig('/tmp/' + current_date + '_Sprint_Burndown_Chart_' + board_id, dpi=150)
 
@@ -645,29 +594,30 @@ def trelloSprintBurndown(event, context):
 
                     print(f'Start Date: {sprint_dates[0]} End Date: {sprint_dates[len(sprint_dates)-1]}')
 
-                    # Get Organization members Out of Office
-                    org_members_ooo = get_org_members_ooo(BAMBOOHR_API_TOKEN, BAMBOOHR_ORG_NAME, sprint_dates[0], sprint_dates[len(sprint_dates)-1])
-
                     team_members = json.loads(powerup_data)['team_member_list']
+
+                    is_show_team_size = eval(json.loads(powerup_data)['is_show_team_size'])
+
+                    team_members_days_ooo = json.loads(powerup_data)['team_members_days_ooo']
+
+                    team_members_days_ooo = team_members_days_ooo.split(",")
+
+                    team_members_days_ooo_list = [0]
+                    for ooo_per_day in team_members_days_ooo:
+                        team_members_days_ooo_list.append(float(ooo_per_day.split("-")[1]))
+
+                    print(is_show_team_size + " " + type(is_show_team_size))
+                    print(team_members_days_ooo_list)
+
                     team_size = len(team_members)
 
-                    # Get Team members Out of Office
-                    team_members_ooo = []
-                    for team_member in team_members:
-                        for org_member_ooo in org_members_ooo:
-                            member_sequence = SequenceMatcher(a=team_member, b=org_member_ooo)
-                            print(f'Team Member Compare ratio: {member_sequence.ratio()}')
-                            if member_sequence.ratio() >= 0.3:
-                                print(member_sequence.ratio())
-                                team_members_ooo.append(team_member)
-
                     # Update sprint data
-                    sprint_data = update_sprint_data(sprint_start_day, board_id, sprint_dates, stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining, team_size, len(team_members_ooo))
+                    sprint_data = update_sprint_data(sprint_start_day, board_id, sprint_dates, stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining, team_size)
 
                     print(sprint_data)
 
                     # Create Sprint Burndown Chart
-                    create_chart(sprint_data, total_sprint_days, board_id, team_members)
+                    create_chart(sprint_data, total_sprint_days, board_id, team_members, team_members_days_ooo_list, is_show_team_size)
 
                     attachment_card_id = json.loads(powerup_data)['selected_card_for_attachment']
 

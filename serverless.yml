@@ -22,12 +22,10 @@ functions:
     memorySize: 512
     timeout: 120
     environment:
-      BAMBOOHR_API_TOKEN_SSM_PARAMETER_KEY: '/Serverless/BambooHR/ApiToken'
       TRELLO_API_KEY_SSM_PARAMETER_KEY: '/Serverless/Trello/ApiKey'
       TRELLO_TOKEN_SSM_PARAMETER_KEY: '/Serverless/Trello/Token'
       TRELLO_ORGANIZATION_ID: ${env:TRELLO_ORGANIZATION_ID}
       POWERUP_NAME: ${env:POWERUP_NAME}
-      BAMBOOHR_ORG_NAME: ${env:BAMBOOHR_ORG_NAME}
       CALLBACK_URL:
         Fn::Sub: 'https://#{ApiGatewayRestApi}.execute-api.#{AWS::Region}.amazonaws.com/${self:provider.stage}/${env:API_PATH}'
       DEPLOYMENT_BUCKET:
@@ -65,12 +63,10 @@ functions:
     memorySize: 512
     timeout: 300
     environment:
-      BAMBOOHR_API_TOKEN_SSM_PARAMETER_KEY: '/Serverless/BambooHR/ApiToken'
       TRELLO_API_KEY_SSM_PARAMETER_KEY: '/Serverless/Trello/ApiKey'
       TRELLO_TOKEN_SSM_PARAMETER_KEY: '/Serverless/Trello/Token'
       TRELLO_ORGANIZATION_ID: ${env:TRELLO_ORGANIZATION_ID}
       POWERUP_NAME: ${env:POWERUP_NAME}
-      BAMBOOHR_ORG_NAME: ${env:BAMBOOHR_ORG_NAME}
       CALLBACK_URL:
         Fn::Sub: 'https://#{ApiGatewayRestApi}.execute-api.#{AWS::Region}.amazonaws.com/${self:provider.stage}/${env:API_PATH}'
       DEPLOYMENT_BUCKET:
