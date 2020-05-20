@@ -308,15 +308,13 @@ def create_chart(sprint_data, total_sprint_days, board_id, team_members, team_me
 
     for key, value in sprint_data[board_id].items():
         if key != 'ideal_tasks_remaining':
-            try:
-                sprint_dates_list.append(key)
-                stories_defects_remaining_list.append(value['stories_defects_remaining'])
-                stories_defects_done_list.append(value['stories_defects_done'])
+            sprint_dates_list.append(key)
+            stories_defects_remaining_list.append(value['stories_defects_remaining'])
+            stories_defects_done_list.append(value['stories_defects_done'])
+            if value.get('tasks_remaining'):
                 tasks_remaining_list.append(value['tasks_remaining'])
+            if value.get('team_size'):
                 team_size_list.append(value['team_size'])
-            except Exception as error:
-                print(error)
-                continue
 
     team_size_list[0] = team_size_list[1]
 
