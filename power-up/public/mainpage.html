@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="https://p.trellocdn.com/power-up.min.css">
+    <script src="https://p.trellocdn.com/power-up.min.js"></script>
+    
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.3/js/select2.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.3/css/select2.css" rel="stylesheet"/>
+    <link href="/css/style.css" rel="stylesheet"/>
+  </head>
+  <body style="overflow: auto;">
+    
+    <div id="content">
+      <label for="sprintStartDaySelectEvents" class="mod-primary">Sprint Start Day</label>
+      <select id="sprintStartDaySelectEvents" class="mod-primary" style="width: 100%;">
+          <option value="Monday">Monday</option>
+          <option value="Tuesday">Tuesday</option>
+          <option value="Wednesday">Wednesday</option>
+          <option value="Thursday">Thursday</option>
+          <option value="Friday">Friday</option>
+      </select>
+
+      <label for="sprintDaysEvent" class="mod-primary">Total Sprint Days (Multiples of 5)</label>
+      <input type="text" id="sprintDaysEvent" placeholder="Total Sprint Days - Multiples of 5" class="mod-primary">
+      
+      <label for="teamMembersDaysOOOEvent" class="mod-primary">Team Members Days Out of Office</label>
+      <input type="text" id="teamMembersDaysOOOEvent" placeholder="Example 1-0,2-1.5,3-1..." class="mod-primary">
+      
+      <label for="showTeamSizeOnChart"><input type="checkbox" id="showTeamSizeOnChart" value="false" class="mod-primary"> Show Team Size on Chart</label>
+
+      <label for="selectEvents" class="mod-primary">Select Lists to Monitor</label>
+      <select multiple class="mod-primary" id="selectEvents" style="width: 100%;">
+      </select>
+      
+      <label for="teamMemberListSelectEvents" class="mod-primary">Members on Team for Srpint</label>
+      <select multiple id="teamMemberListSelectEvents" class="mod-primary" style="width: 100%;">
+      </select>
+
+      <label for="selectCardEvents" class="mod-primary">Pick the Card to attach Sprint Burndown Chart</label>
+      <select class="mod-primary" id="selectCardEvents" style="width: 100%;">
+      </select>
+      <br>
+      <br>
+      <button id="save-btn" class="mod-primary" style="float: right; width: 40%; vertical-align: bottom;">Save</button>
+      <button id="clear-btn" class="mod-danger" style="float: left; width: 40%;">Clear All</button>
+    </div>
+
+    <script src="https://p.trellocdn.com/power-up.min.js"></script>
+    <script src="./js/mainpage.js"></script>
+  </body>
+</html>
