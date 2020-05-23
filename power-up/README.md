@@ -15,3 +15,5 @@ This is Sprint Burndown Chart Trello Power-Up can be hosted on [glitch.com](http
   ```bash
   https://github.com/orgname/reponame.git
   ```
+
+- Or copy all the files from [power-up](power-up) directory to Glitch Project
