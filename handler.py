@@ -538,8 +538,6 @@ def trelloSprintBurndown(event, context):
     print(type(event))
     print(event)
 
-    existing_webhooks = client.list_hooks(TRELLO_TOKEN)
-
     # S3 Client
     s3 = boto3.resource('s3')
 
@@ -556,6 +554,7 @@ def trelloSprintBurndown(event, context):
 
             # Create Webhook for new board
             if payload['action']['type'] == 'addToOrganizationBoard':
+                existing_webhooks = client.list_hooks(TRELLO_TOKEN)
                 print(create_new_board_hook(client, payload, existing_webhooks))
 
             if payload['action']['type'] in ('updateCard', 'createCard'):
@@ -639,6 +638,9 @@ def trelloSprintBurndown(event, context):
     else:
         # Create Webhook for Trello Organization
         print(client.create_hook(CALLBACK_URL, TRELLO_ORGANIZATION_ID, "Trello Organiztion Webhook", TRELLO_TOKEN))
+
+        # Get existing Trello Webhooks
+        existing_webhooks = client.list_hooks(TRELLO_TOKEN)
 
         # Create Webhook for Exisiting Boards
         print(create_existing_boards_hook(client, existing_webhooks))
