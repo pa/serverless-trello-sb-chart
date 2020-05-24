@@ -505,6 +505,9 @@ def attach_chart(client, card_id, board_id):
                     "Accept": "application/json"
             }
         )
+
+        # Delete Chart locally
+        os.remove(image_path)
     except Exception as error:
         print(error)
         pass
