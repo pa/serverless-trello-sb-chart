@@ -168,8 +168,8 @@ def create_existing_boards_hook(client, existing_webhooks):
         try:
             if bool(is_create_board_webhook):
                 client.create_hook(CALLBACK_URL, board.id, f'{board.name} Trello Board Webhook', TRELLO_TOKEN)
-        except Exception as e:
-            print(f' {e}: Error creating webhook for the Trello Board - {board.name}')
+        except Exception as error:
+            print(f' {error}: Error creating webhook for the Trello Board - {board.name}')
             continue
     return 'Created webhooks for already existing boards'
 
@@ -224,10 +224,8 @@ def get_counts(client, payload, monitor_lists, start_day):
                 for card in cards_list:
                     if card.name[:2] in 'T ':
                         tasks_remaining += 1
-                        print("Tasks " + card.name)
                     elif card.name[:2] in ('U ', 'D '):
                         stories_defects_remaining += 1
-                        print("Userstory/Defect " + card.name)
                 break
 
     if current_day == start_day:
@@ -240,7 +238,6 @@ def get_counts(client, payload, monitor_lists, start_day):
             for card in cards_list:
                 if card.name[:2] in ('U ', 'D '):
                     stories_defects_done += 1
-                    print("Done List - Userstory/Defect " + card.name)
                 if current_day == start_day:
                     if card.name[:2] in 'T ':
                         ideal_tasks_remaining += 1
@@ -471,7 +468,6 @@ def delete_chart(client, card_id):
         )
         for card_attachment in card_attachments:
             if current_date in card_attachment['name']:
-                print(card_attachment['name'])
                 client.fetch_json(
                         f"cards/{card_id}/attachments/{card_attachment['id']}",
                         http_method="DELETE",
@@ -535,34 +531,25 @@ def trelloSprintBurndown(event, context):
             token=TRELLO_TOKEN
     )
 
-    print(type(event))
-    print(event)
-
     # S3 Client
     s3 = boto3.resource('s3')
 
     if event:
         if current_day not in ('Saturday', 'Sunday'):
-
-            # CST Day and Date
-            print(current_day)
-            print(current_date)
-
             payload = json.loads(event['payload'])
-
             board_id = payload['action']['data']['board']['id']
 
             # Create Webhook for new board
             if payload['action']['type'] == 'addToOrganizationBoard':
                 existing_webhooks = client.list_hooks(TRELLO_TOKEN)
-                print(create_new_board_hook(client, payload, existing_webhooks))
+                create_new_board_hook(client, payload, existing_webhooks)
 
             if payload['action']['type'] in ('updateCard', 'createCard'):
                 # Download Sprint data and Card Attachment data files from S3
                 try:
                     s3.Bucket(DEPLOYMENT_BUCKET).download_file(sprint_data_file_name, '/tmp/' + sprint_data_file_name)
-                except Exception as e:
-                    print(e)
+                except Exception as error:
+                    print(error)
                     pass
 
                 # Get PowerUp Data
@@ -570,8 +557,6 @@ def trelloSprintBurndown(event, context):
 
                 # Check PowerUp Data exists
                 if powerup_data is not None:
-                    print(json.loads(powerup_data))
-
                     sprint_start_day = json.loads(powerup_data)['sprint_start_day']
                     total_sprint_days = int(json.loads(powerup_data)['total_sprint_days'])
 
@@ -581,16 +566,14 @@ def trelloSprintBurndown(event, context):
                     # Get counts of Stories/Tasks
                     stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining = get_counts(client, payload, monitor_lists, sprint_start_day)
 
+                    print(f'Board ID: {board_id}')
                     print(f'Stories Remaining: {stories_defects_remaining}')
                     print(f'Stories Done: {stories_defects_done}')
                     print(f'Tasks Remaining: {tasks_remaining}')
                     print(f'Ideal Tasks Remaining: {ideal_tasks_remaining}')
-                    print(board_id)
 
                     # Current Sprint Dates
                     sprint_dates = get_sprint_dates(sprint_start_day, (total_sprint_days - 1), board_id)
-
-                    print(sprint_dates)
 
                     print(f'Start Date: {sprint_dates[0]} End Date: {sprint_dates[len(sprint_dates)-1]}')
 
@@ -606,15 +589,10 @@ def trelloSprintBurndown(event, context):
                     for ooo_per_day in team_members_days_ooo:
                         team_members_days_ooo_list.append(float(ooo_per_day.split("-")[1]))
 
-                    print(is_show_team_size)
-                    print(team_members_days_ooo_list)
-
                     team_size = len(team_members)
 
                     # Update sprint data
                     sprint_data = update_sprint_data(sprint_start_day, board_id, sprint_dates, stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining, team_size)
-
-                    print(sprint_data)
 
                     # Create Sprint Burndown Chart
                     create_chart(sprint_data, total_sprint_days, board_id, team_members, team_members_days_ooo_list, is_show_team_size)
@@ -630,17 +608,21 @@ def trelloSprintBurndown(event, context):
                     # Upload Sprint data and Card Attachment data files from S3
                     try:
                         s3.Object(DEPLOYMENT_BUCKET, sprint_data_file_name).put(Body=open('/tmp/' + sprint_data_file_name, 'rb'))
-                    except Exception as e:
-                        print(e)
+                    except Exception as error:
+                        print(error)
                         pass
 
-                    print(json.load(open('/tmp/sprint_data.json', 'r')))
+                    # Return Success
+                    success()
     else:
         # Create Webhook for Trello Organization
-        print(client.create_hook(CALLBACK_URL, TRELLO_ORGANIZATION_ID, "Trello Organiztion Webhook", TRELLO_TOKEN))
+        client.create_hook(CALLBACK_URL, TRELLO_ORGANIZATION_ID, "Trello Organiztion Webhook", TRELLO_TOKEN)
 
         # Get existing Trello Webhooks
         existing_webhooks = client.list_hooks(TRELLO_TOKEN)
 
         # Create Webhook for Exisiting Boards
-        print(create_existing_boards_hook(client, existing_webhooks))
+        create_existing_boards_hook(client, existing_webhooks)
+
+        # Return Success
+        success()
