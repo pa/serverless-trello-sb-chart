@@ -1,0 +1,81 @@
+service: trello-sb-chart-automation
+# app and org for use with dashboard.serverless.com
+#app: your-app-name
+#org: your-org-name
+package:
+  exclude:
+    - node_modules/**
+
+provider:
+  name: aws
+  runtime: python3
+  iamManagedPolicies:
+    - 'arn:aws:iam::aws:policy/AmazonSSMReadOnlyAccess'
+    - 'arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole'
+    - 'arn:aws:iam::aws:policy/AWSLambdaExecute'
+
+functions:
+  trelloSprintBurndown:
+    handler: handler.trelloSprintBurndown
+    description: Creates Sprint Burndown Chart in Trello Board
+    runtime: python3.6
+    memorySize: 512
+    timeout: 120
+    environment:
+      TRELLO_API_KEY_SSM_PARAMETER_KEY: '/Serverless/Trello/ApiKey'
+      TRELLO_TOKEN_SSM_PARAMETER_KEY: '/Serverless/Trello/Token'
+      TRELLO_ORGANIZATION_ID: ${env:TRELLO_ORGANIZATION_ID}
+      POWERUP_NAME: ${env:POWERUP_NAME}
+      CALLBACK_URL:
+        Fn::Sub: 'https://#{ApiGatewayRestApi}.execute-api.#{AWS::Region}.amazonaws.com/${self:provider.stage}/trello'
+      DEPLOYMENT_BUCKET:
+        Ref: ServerlessDeploymentBucket
+    events:
+      - http:
+          path: trello
+          integration: mock
+          method: head
+          request:
+            template:
+              application/json: '{"statusCode": 200}'
+          response:
+            template: $input.path('$')
+            statusCodes:
+              200:
+                pattern: ''
+      - http:
+          path: trello
+          integration: lambda
+          method: post
+          async: true
+          request:
+            template:
+              application/json: >
+                {
+                  "x_trello_webhook": "$util.escapeJavaScript($input.params().header.get('X-Trello-Webhook'))",
+                  "payload": "$util.escapeJavaScript($input.body)"
+                }
+
+  scheduledTrelloSprintBurndown:
+    handler: scheduled_handler.trelloSprintBurndown
+    description: Creates Sprint Burndown Chart in Trello Board
+    runtime: python3.6
+    memorySize: 512
+    timeout: 300
+    environment:
+      TRELLO_API_KEY_SSM_PARAMETER_KEY: '/Serverless/Trello/ApiKey'
+      TRELLO_TOKEN_SSM_PARAMETER_KEY: '/Serverless/Trello/Token'
+      TRELLO_ORGANIZATION_ID: ${env:TRELLO_ORGANIZATION_ID}
+      POWERUP_NAME: ${env:POWERUP_NAME}
+      CALLBACK_URL:
+        Fn::Sub: 'https://#{ApiGatewayRestApi}.execute-api.#{AWS::Region}.amazonaws.com/${self:provider.stage}/trello'
+      DEPLOYMENT_BUCKET:
+        Ref: ServerlessDeploymentBucket
+    events:
+      - schedule: cron(0 */4 ? * MON-FRI *)
+    tags:
+      ManagedBy: "Serverless"
+
+plugins:
+  - serverless-python-requirements
+  - serverless-pseudo-parameters

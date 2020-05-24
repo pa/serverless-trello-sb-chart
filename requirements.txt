@@ -1,0 +1,4 @@
+requests
+py-trello
+matplotlib
+pytz
