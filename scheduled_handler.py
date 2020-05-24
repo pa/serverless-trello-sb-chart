@@ -154,6 +154,7 @@ def get_counts(client, board_id, monitor_lists, start_day):
     :param client: Trello client Object
     :param board_id: The ID of the Board
     :param monitor_lists: Trello monitor lists from PowerUp Data
+    :param start_day: Start day of the Sprint. Eg: Monday
     :return: returns count of User Stories/Defects remaining and completed
     """
     stories_defects_remaining = 0
@@ -239,6 +240,7 @@ def update_sprint_data(start_day, board_id, sprint_dates, stories_defects_remain
     :param stories_defects_done: Userstories or Defects done count
     :param tasks_remaining: Tasks remaining count
     :param ideal_tasks_remaining: Ideal tasks remaining count
+    :param team_size: Total Team Size in the Current Sprint
     :return: returns Sprint Json Data
     """
     sprint_data = {}
@@ -288,9 +290,11 @@ def create_chart(sprint_data, total_sprint_days, board_id, team_members, team_me
     """
     Creates Sprint Burndown Chart
     :param sprint_data: The Sprint Data
+    :param total_sprint_days: Total Sprint Days in the Current Sprint without Weekends Eg: 5 (Multiples of 5)
     :param board_id: The ID of the Board
     :param team_members: Team members on Team for Sprint
     :param team_members_days_ooo: Team Members Days Out of Office
+    :param is_show_team_size: To enable Team Size in Sprint Burndown Chart
     :return: returns nothing
     """
     sprint_dates_list = [""]
