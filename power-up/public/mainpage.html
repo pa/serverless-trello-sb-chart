@@ -4,14 +4,13 @@
     <meta charset="utf-8">
     <link rel="stylesheet" href="https://p.trellocdn.com/power-up.min.css">
     <script src="https://p.trellocdn.com/power-up.min.js"></script>
-    
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.1/jquery.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.3/js/select2.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.3/css/select2.css" rel="stylesheet"/>
     <link href="/css/style.css" rel="stylesheet"/>
   </head>
   <body style="overflow: auto;">
-    
+
     <div id="content">
       <label for="sprintStartDaySelectEvents" class="mod-primary">Sprint Start Day</label>
       <select id="sprintStartDaySelectEvents" class="mod-primary" style="width: 100%;">
@@ -24,16 +23,20 @@
 
       <label for="sprintDaysEvent" class="mod-primary">Total Sprint Days (Multiples of 5)</label>
       <input type="text" id="sprintDaysEvent" placeholder="Total Sprint Days - Multiples of 5" class="mod-primary">
-      
+
       <label for="teamMembersDaysOOOEvent" class="mod-primary">Team Members Days Out of Office</label>
       <input type="text" id="teamMembersDaysOOOEvent" placeholder="Example 1-0,2-1.5,3-1..." class="mod-primary">
-      
+
       <label for="showTeamSizeOnChart"><input type="checkbox" id="showTeamSizeOnChart" value="false" class="mod-primary"> Show Team Size on Chart</label>
 
       <label for="selectEvents" class="mod-primary">Select Lists to Monitor</label>
       <select multiple class="mod-primary" id="selectEvents" style="width: 100%;">
       </select>
-      
+
+      <label for="doneCardEvents" class="mod-primary">Pick the Done List</label>
+      <select class="mod-primary" id="doneCardEvents" style="width: 100%;">
+      </select>
+
       <label for="teamMemberListSelectEvents" class="mod-primary">Members on Team for Srpint</label>
       <select multiple id="teamMemberListSelectEvents" class="mod-primary" style="width: 100%;">
       </select>

@@ -148,7 +148,7 @@ def get_powerup_data(client, board_id):
 
 
 # Get Stories and Tasks Counts
-def get_counts(client, board_id, monitor_lists, start_day):
+def get_counts(client, board_id, monitor_lists, done_list, start_day):
     """
     Get List data
     :param client: Trello client Object
@@ -180,17 +180,13 @@ def get_counts(client, board_id, monitor_lists, start_day):
     if current_day == start_day:
         ideal_tasks_remaining = tasks_remaining
 
-    for board_list in board_lists:
-        # Get count of Userstories/Defects Done
-        if (board_list.name)[-4:] == "Done":
-            cards_list = List(board_object, board_list.id).list_cards()
-            for card in cards_list:
-                if card.name[:2] in ('U ', 'D '):
-                    stories_defects_done += 1
-                if current_day == start_day:
-                    if card.name[:2] in 'T ':
-                        ideal_tasks_remaining += 1
-            break
+    cards_list = List(board_object, done_list).list_cards()
+    for card in cards_list:
+        if card.name[:2] in ('U ', 'D '):
+            stories_defects_done += 1
+        if current_day == start_day:
+            if card.name[:2] in 'T ':
+                ideal_tasks_remaining += 1
 
     return stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining
 
@@ -511,8 +507,11 @@ def trelloSprintBurndown(event, context):
                     # Get monitor lists
                     monitor_lists = json.loads(powerup_data)['selected_list']
 
+                    # Get Done lists
+                    done_list = json.loads(powerup_data)['selected_done_list']
+
                     # Get counts of Stories/Tasks
-                    stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining = get_counts(client, board.id, monitor_lists, sprint_start_day)
+                    stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining = get_counts(client, board.id, monitor_lists, done_list, sprint_start_day)
 
                     print(f'Board ID: {board.id}')
                     print(f'Stories Remaining: {stories_defects_remaining}')

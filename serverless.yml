@@ -1,10 +1,11 @@
-service: trello-sb-chart-automation
+service: trello-sb-chart
 # app and org for use with dashboard.serverless.com
 #app: your-app-name
 #org: your-org-name
 package:
   exclude:
     - node_modules/**
+    - power-up/**
 
 provider:
   name: aws

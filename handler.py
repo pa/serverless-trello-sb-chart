@@ -200,7 +200,7 @@ def create_new_board_hook(client, payload, existing_webhooks):
 
 
 # Get Stories and Tasks Counts
-def get_counts(client, payload, monitor_lists, start_day):
+def get_counts(client, payload, monitor_lists, done_list, start_day):
     """
     Get List data
     :param client: Trello client Object
@@ -232,17 +232,13 @@ def get_counts(client, payload, monitor_lists, start_day):
     if current_day == start_day:
         ideal_tasks_remaining = tasks_remaining
 
-    for board_list in board_lists:
-        # Get count of Userstories/Defects Done
-        if (board_list.name)[-4:] == "Done":
-            cards_list = List(board_object, board_list.id).list_cards()
-            for card in cards_list:
-                if card.name[:2] in ('U ', 'D '):
-                    stories_defects_done += 1
-                if current_day == start_day:
-                    if card.name[:2] in 'T ':
-                        ideal_tasks_remaining += 1
-            break
+    cards_list = List(board_object, done_list).list_cards()
+    for card in cards_list:
+        if card.name[:2] in ('U ', 'D '):
+            stories_defects_done += 1
+        if current_day == start_day:
+            if card.name[:2] in 'T ':
+                ideal_tasks_remaining += 1
 
     return stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining
 
@@ -564,11 +560,14 @@ def trelloSprintBurndown(event, context):
                     sprint_start_day = json.loads(powerup_data)['sprint_start_day']
                     total_sprint_days = int(json.loads(powerup_data)['total_sprint_days'])
 
-                    # Get monitor lists
+                    # Get Monitor lists
                     monitor_lists = json.loads(powerup_data)['selected_list']
 
+                    # Get Done lists
+                    done_list = json.loads(powerup_data)['selected_done_list']
+
                     # Get counts of Stories/Tasks
-                    stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining = get_counts(client, payload, monitor_lists, sprint_start_day)
+                    stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining = get_counts(client, payload, monitor_lists, done_list, sprint_start_day)
 
                     print(f'Board ID: {board_id}')
                     print(f'Stories Remaining: {stories_defects_remaining}')
@@ -615,6 +614,15 @@ def trelloSprintBurndown(event, context):
                     except Exception as error:
                         print(error)
                         pass
+
+                    url = f'https://api.trello.com/1/members/me?key={TRELLO_API_KEY}&token={TRELLO_TOKEN}'
+
+                    response = requests.request(
+                    "GET",
+                    url
+                    )
+
+                    print(response.headers)
 
                     # Return Success
                     success()
