@@ -148,11 +148,11 @@ def get_powerup_data(client, board_id):
 
 
 # Get Stories and Tasks Counts
-def get_counts(client, board_id, monitor_lists, done_list, start_day):
+def get_counts(client, payload, monitor_lists, done_list, start_day):
     """
     Get List data
     :param client: Trello client Object
-    :param board_id: The ID of the Board
+    :param payload: Trello Webhook Payload from API Gateway
     :param monitor_lists: Trello monitor lists from PowerUp Data
     :param start_day: Start day of the Sprint. Eg: Monday
     :return: returns count of User Stories/Defects remaining and completed
@@ -162,31 +162,27 @@ def get_counts(client, board_id, monitor_lists, done_list, start_day):
     tasks_remaining = 0
     ideal_tasks_remaining = 0
 
-    board_object = Board(client, board_id=board_id)
-    board_lists = board_object.all_lists()
+    board_object = Board(client, board_id=payload['action']['data']['board']['id'])
+    board_cards = board_object.get_cards()
 
     for monitor_list in monitor_lists:
-        for board_list in board_lists:
-            cards_list = List(board_object, board_list.id).list_cards()
-            # Get count of Tasks and Userstory/Defect Remaining
-            if board_list.id == monitor_list:
-                for card in cards_list:
-                    if card.name[:2] in 'T ':
-                        tasks_remaining += 1
-                    elif card.name[:2] in ('U ', 'D '):
-                        stories_defects_remaining += 1
-                break
+        for board_card in board_cards:
+            if board_card.idList == monitor_list:
+                if board_card.name[:2] in 'T ':
+                    tasks_remaining += 1
+                elif board_card.name[:2] in ('U ', 'D '):
+                    stories_defects_remaining += 1
+    else:
+        for board_card in board_cards:
+            if board_card.idList == done_list:
+                if board_card.name[:2] in ('U ', 'D '):
+                    stories_defects_done += 1
+                if current_day == start_day:
+                    if board_card.name[:2] in 'T ':
+                        ideal_tasks_remaining += 1
 
     if current_day == start_day:
-        ideal_tasks_remaining = tasks_remaining
-
-    cards_list = List(board_object, done_list).list_cards()
-    for card in cards_list:
-        if card.name[:2] in ('U ', 'D '):
-            stories_defects_done += 1
-        if current_day == start_day:
-            if card.name[:2] in 'T ':
-                ideal_tasks_remaining += 1
+        ideal_tasks_remaining += tasks_remaining
 
     return stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining
 
