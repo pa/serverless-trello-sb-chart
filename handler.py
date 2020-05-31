@@ -541,8 +541,13 @@ def trelloSprintBurndown(event, context):
                 # Get PowerUp Data
                 powerup_data = get_powerup_data(client, board_id)
 
-                if (payload['action']['data']['listBefore']['id'] in json.loads(powerup_data)['selected_list'] or
-                    payload['action']['data']['listAfter']['id'] in json.loads(powerup_data)['selected_list']):
+                # Get Monitor lists
+                monitor_lists = json.loads(powerup_data)['selected_list']
+
+                if (payload['action']['data'].get('listBefore', {}).get('id') in monitor_lists or
+                    payload['action']['data'].get('listAfter', {}).get('id') in monitor_lists or
+                    (payload['action'].get('display').get('translationKey') in 'action_create_card' and
+                    payload['action']['data'].get('list', {}).get('id') in monitor_lists)):
                     # Download Sprint data and Card Attachment data files from S3
                     try:
                         s3.Bucket(DEPLOYMENT_BUCKET).download_file(sprint_data_file_name, '/tmp/' + sprint_data_file_name)
@@ -557,9 +562,6 @@ def trelloSprintBurndown(event, context):
                         sprint_start_day = "Saturday"
 
                         total_sprint_days = int(json.loads(powerup_data)['total_sprint_days'])
-
-                        # Get Monitor lists
-                        monitor_lists = json.loads(powerup_data)['selected_list']
 
                         # Get Done lists
                         done_list = json.loads(powerup_data)['selected_done_list']
