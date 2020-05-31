@@ -14,6 +14,7 @@ from trello import TrelloClient
 from trello import Organization
 from trello import Board
 from botocore.exceptions import ClientError
+from retry import retry
 
 
 # Get the SSM Parameter Keys
@@ -115,6 +116,7 @@ def enabled_powerups(client, board_id):
 
 
 # Get PowerUp Data that is required for monitoring the Board
+@retry(tries=3, delay=11)
 def get_powerup_data(client, board_id):
     """
     Get PowerUp Data from the board
@@ -171,6 +173,7 @@ def create_existing_boards_hook(client, existing_webhooks):
 
 
 # Create Webhook for New Organization Boards
+@retry(tries=3, delay=11)
 def create_new_board_hook(client, payload, existing_webhooks):
     """
     Create Webhooks for Organization Boards
@@ -180,22 +183,20 @@ def create_new_board_hook(client, payload, existing_webhooks):
     :return: returns status of the Webhook Creation
     """
     is_create_board_webhook = False
-    try:
-        for webhook in existing_webhooks:
-            # Check is webhook created for Organization ID
-            if webhook.callback_url == CALLBACK_URL and webhook.id_model == payload['action']['data']['board']['id']:
-                is_create_board_webhook = False
-                break
-            else:
-                is_create_board_webhook = True
-        if bool(is_create_board_webhook):
-            if payload['action']['type'] == "addToOrganizationBoard":
-                return client.create_hook(CALLBACK_URL, payload['action']['data']['board']['id'], f"{payload['action']['data']['board']['name']} Trello Board Webhook", TRELLO_TOKEN)
-    except Exception as e:
-        print(f"{e}: Error creating webhook for the Trello Board ID - {payload['action']['data']['board']['name']}")
+    for webhook in existing_webhooks:
+        # Check is webhook created for Organization ID
+        if webhook.callback_url == CALLBACK_URL and webhook.id_model == payload['action']['data']['board']['id']:
+            is_create_board_webhook = False
+            break
+        else:
+            is_create_board_webhook = True
+    if bool(is_create_board_webhook):
+        if payload['action']['type'] == "addToOrganizationBoard":
+            return client.create_hook(CALLBACK_URL, payload['action']['data']['board']['id'], f"{payload['action']['data']['board']['name']} Trello Board Webhook", TRELLO_TOKEN)
 
 
 # Get Stories and Tasks Counts
+@retry(tries=3, delay=11)
 def get_counts(client, payload, monitor_lists, done_list, start_day):
     """
     Get List data
@@ -443,6 +444,7 @@ def create_chart(sprint_data, total_sprint_days, board_id, team_members, team_me
 
 
 # Delete previously attached Chart from the card
+@retry(tries=3, delay=11)
 def delete_chart(client, card_id):
     """
     Deletes already existing Sprint Burndown chart
@@ -450,55 +452,50 @@ def delete_chart(client, card_id):
     :param card_id: The ID of the Card
     :return: returns None
     """
-    try:
-        card_attachments = client.fetch_json(
-            f"cards/{card_id}/attachments",
-            http_method="GET",
-            headers = {
-                    "Accept": "application/json"
-                }
-        )
-        for card_attachment in card_attachments:
-            if current_date in card_attachment['name']:
-                client.fetch_json(
-                        f"cards/{card_id}/attachments/{card_attachment['id']}",
-                        http_method="DELETE",
-                        headers = {
-                                "Accept": "application/json"
-                        }
-                    )
-    except Exception as error:
-        print(error)
-        pass
+    card_attachments = client.fetch_json(
+        f"cards/{card_id}/attachments",
+        http_method="GET",
+        headers = {
+                "Accept": "application/json"
+            }
+    )
+    for card_attachment in card_attachments:
+        if current_date in card_attachment['name']:
+            client.fetch_json(
+                    f"cards/{card_id}/attachments/{card_attachment['id']}",
+                    http_method="DELETE",
+                    headers = {
+                            "Accept": "application/json"
+                    }
+                )
 
 
 # Attach Chart to the Card
+@retry(tries=3, delay=11)
 def attach_chart(client, card_id, board_id):
     """
     Attaches Sprint Burndown chart to a card
     :param client: Trello client Object
     :param card_id: The ID of the Card
     :param board_id: The ID of the Board
-    :return: returns None
+    :return: returns attachment response
     """
     image_path = '/tmp/' + current_date + '_Sprint_Burndown_Chart_' + board_id + '.png'
-    try:
-        attachment_response = client.fetch_json(
-            f"cards/{card_id}/attachments",
-            http_method="POST",
-            files = {
-                'file': (current_date + '_Sprint_Burndown_Chart.png', open(image_path, 'rb')),
-            },
-            headers = {
-                    "Accept": "application/json"
-            }
-        )
+    attachment_response = client.fetch_json(
+        f"cards/{card_id}/attachments",
+        http_method="POST",
+        files = {
+            'file': (current_date + '_Sprint_Burndown_Chart.png', open(image_path, 'rb')),
+        },
+        headers = {
+                "Accept": "application/json"
+        }
+    )
 
-        # Delete Chart locally
-        os.remove(image_path)
-    except Exception as error:
-        print(error)
-        pass
+    # Delete Chart locally
+    os.remove(image_path)
+
+    return attachment_response
 
 
 # Success Status Method
@@ -548,6 +545,7 @@ def trelloSprintBurndown(event, context):
                     payload['action']['data'].get('listAfter', {}).get('id') in monitor_lists or
                     (payload['action'].get('display').get('translationKey') in 'action_create_card' and
                     payload['action']['data'].get('list', {}).get('id') in monitor_lists)):
+
                     # Download Sprint data and Card Attachment data files from S3
                     try:
                         s3.Bucket(DEPLOYMENT_BUCKET).download_file(sprint_data_file_name, '/tmp/' + sprint_data_file_name)
@@ -558,8 +556,6 @@ def trelloSprintBurndown(event, context):
                     # Check PowerUp Data exists
                     if powerup_data is not None:
                         sprint_start_day = json.loads(powerup_data)['sprint_start_day']
-
-                        sprint_start_day = "Saturday"
 
                         total_sprint_days = int(json.loads(powerup_data)['total_sprint_days'])
 
@@ -615,15 +611,6 @@ def trelloSprintBurndown(event, context):
                             print(error)
                             pass
 
-                        response = requests.request(
-                                    "GET",
-                                    f'https://api.trello.com/1/members/me?key={TRELLO_API_KEY}&token={TRELLO_TOKEN}'
-                                )
-
-                        print(f"X-RATE-LIMIT-API-TOKEN-REMAINING - {response.headers['X-RATE-LIMIT-API-TOKEN-REMAINING']}")
-
-                        print(response.headers)
-
                         # Return Success
                         success()
     else:
@@ -635,15 +622,6 @@ def trelloSprintBurndown(event, context):
 
         # Create Webhook for Exisiting Boards
         create_existing_boards_hook(client, existing_webhooks)
-
-        response = requests.request(
-                    "GET",
-                    f'https://api.trello.com/1/members/me?key={TRELLO_API_KEY}&token={TRELLO_TOKEN}'
-                )
-
-        print(f"X-RATE-LIMIT-API-TOKEN-REMAINING - {response.headers['X-RATE-LIMIT-API-TOKEN-REMAINING']}")
-
-        print(response.headers)
 
         # Return Success
         success()
