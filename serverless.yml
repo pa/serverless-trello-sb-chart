@@ -28,7 +28,7 @@ functions:
       TRELLO_ORGANIZATION_ID: ${env:TRELLO_ORGANIZATION_ID}
       POWERUP_NAME: ${env:POWERUP_NAME}
       CALLBACK_URL:
-        Fn::Sub: 'https://#{ApiGatewayRestApi}.execute-api.#{AWS::Region}.amazonaws.com/${self:provider.stage}/trello'
+        Fn::Sub: 'https://#{ApiGatewayRestApi}.execute-api.#{AWS::Region}.amazonaws.com/${opt:stage}/trello'
       DEPLOYMENT_BUCKET:
         Ref: ServerlessDeploymentBucket
     events:
@@ -69,7 +69,7 @@ functions:
       TRELLO_ORGANIZATION_ID: ${env:TRELLO_ORGANIZATION_ID}
       POWERUP_NAME: ${env:POWERUP_NAME}
       CALLBACK_URL:
-        Fn::Sub: 'https://#{ApiGatewayRestApi}.execute-api.#{AWS::Region}.amazonaws.com/${self:provider.stage}/trello'
+        Fn::Sub: 'https://#{ApiGatewayRestApi}.execute-api.#{AWS::Region}.amazonaws.com/${opt:stage}/trello'
       DEPLOYMENT_BUCKET:
         Ref: ServerlessDeploymentBucket
     events:

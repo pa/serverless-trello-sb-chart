@@ -126,7 +126,6 @@ def get_powerup_data(client, board_id):
     :return: returns PowerUp Data for monitoring boards
     """
     # Get Enabled PowerUps in the Board
-    enabled_powerups_list = []
     enabled_powerups_data = enabled_powerups(client, board_id)
     plugin_id = get_plugin_id(client, board_id)
 
@@ -148,11 +147,11 @@ def get_powerup_data(client, board_id):
 
 
 # Get Stories and Tasks Counts
-def get_counts(client, payload, monitor_lists, done_list, start_day):
+def get_counts(client, board_id, monitor_lists, done_list, start_day):
     """
     Get List data
     :param client: Trello client Object
-    :param payload: Trello Webhook Payload from API Gateway
+    :param board_id: Trello Board ID
     :param monitor_lists: Trello monitor lists from PowerUp Data
     :param start_day: Start day of the Sprint. Eg: Monday
     :return: returns count of User Stories/Defects remaining and completed
@@ -162,7 +161,7 @@ def get_counts(client, payload, monitor_lists, done_list, start_day):
     tasks_remaining = 0
     ideal_tasks_remaining = 0
 
-    board_object = Board(client, board_id=payload['action']['data']['board']['id'])
+    board_object = Board(client, board_id=board_id)
     board_cards = board_object.get_cards()
 
     for monitor_list in monitor_lists:
@@ -304,9 +303,9 @@ def create_chart(sprint_data, total_sprint_days, board_id, team_members, team_me
             sprint_dates_list.append(key)
             stories_defects_remaining_list.append(value['stories_defects_remaining'])
             stories_defects_done_list.append(value['stories_defects_done'])
-            if value.get('tasks_remaining'):
+            if value.get('tasks_remaining') or value.get('tasks_remaining') == 0:
                 tasks_remaining_list.append(value['tasks_remaining'])
-            if value.get('team_size'):
+            if value.get('team_size') or value.get('team_size') == 0:
                 team_size_list.append(value['team_size'])
 
     team_size_list[0] = team_size_list[1]
@@ -377,7 +376,7 @@ def create_chart(sprint_data, total_sprint_days, board_id, team_members, team_me
     for index in range(0, len(tasks_remaining_list)):
         plt.annotate(xy=[index, tasks_remaining_list[index]], s=str(tasks_remaining_list[index]), color='#482ff7', size=6, ha='center', va='bottom', textcoords="offset points", xytext=(2, 3))
 
-    plt.title("Sprint Burndown Chart")
+    plt.title("Burndown Chart")
 
     on_team_for_sprint = ['On Team for Sprint', '\n']
 

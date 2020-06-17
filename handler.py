@@ -353,9 +353,9 @@ def create_chart(sprint_data, total_sprint_days, board_id, team_members, team_me
             sprint_dates_list.append(key)
             stories_defects_remaining_list.append(value['stories_defects_remaining'])
             stories_defects_done_list.append(value['stories_defects_done'])
-            if value.get('tasks_remaining'):
+            if value.get('tasks_remaining') or value.get('tasks_remaining') == 0:
                 tasks_remaining_list.append(value['tasks_remaining'])
-            if value.get('team_size'):
+            if value.get('team_size') or value.get('team_size') == 0:
                 team_size_list.append(value['team_size'])
 
     team_size_list[0] = team_size_list[1]
@@ -426,7 +426,7 @@ def create_chart(sprint_data, total_sprint_days, board_id, team_members, team_me
     for index in range(0, len(tasks_remaining_list)):
         plt.annotate(xy=[index, tasks_remaining_list[index]], s=str(tasks_remaining_list[index]), color='#482ff7', size=6, ha='center', va='bottom', textcoords="offset points", xytext=(2, 3))
 
-    plt.title("Sprint Burndown Chart")
+    plt.title("Burndown Chart")
 
     on_team_for_sprint = ['On Team for Sprint', '\n']
 
@@ -527,6 +527,8 @@ def trelloSprintBurndown(event, context):
         if current_day not in ('Saturday', 'Sunday'):
             payload = json.loads(event['payload'])
 
+            print(payload)
+
             board_id = payload['action']['data']['board']['id']
 
             # Create Webhook for new board
@@ -545,7 +547,6 @@ def trelloSprintBurndown(event, context):
                     payload['action']['data'].get('listAfter', {}).get('id') in monitor_lists or
                     (payload['action'].get('display').get('translationKey') in 'action_create_card' and
                     payload['action']['data'].get('list', {}).get('id') in monitor_lists)):
-
                     # Download Sprint data and Card Attachment data files from S3
                     try:
                         s3.Bucket(DEPLOYMENT_BUCKET).download_file(sprint_data_file_name, '/tmp/' + sprint_data_file_name)
