@@ -219,12 +219,12 @@ def get_counts(client, payload, monitor_lists, done_list, start_day):
             if board_card.idList == monitor_list:
                 if board_card.name[:2] in 'T ':
                     tasks_remaining += 1
-                elif board_card.name[:2] in ('U ', 'D '):
+                elif board_card.name[:2] in ('U ', 'D ', 'C '):
                     stories_defects_remaining += 1
     else:
         for board_card in board_cards:
             if board_card.idList == done_list:
-                if board_card.name[:2] in ('U ', 'D '):
+                if board_card.name[:2] in ('U ', 'D ', 'C '):
                     stories_defects_done += 1
                 if current_day == start_day:
                     if board_card.name[:2] in 'T ':
@@ -369,17 +369,16 @@ def create_chart(sprint_data, total_sprint_days, board_id, team_members, team_me
     ideal_line_list = [0]
     ax.axhline(y=0,color='#d0e2f6',linewidth=.5, zorder=0)
     for index in range(0, total_sprint_days):
-        y_axis_label = y_axis_labels[index] + round(max(tasks_remaining_list)/total_sprint_days)
+        y_axis_label = y_axis_labels[index] + round((max(tasks_remaining_list)/total_sprint_days) + 0.5)
         ideal_line = ideal_line_list[index] + (ideal_tasks_remaining/total_sprint_days)
         y_axis_labels.append(y_axis_label)
         ideal_line_list.append(ideal_line)
-        ax.axhline(y=y_axis_labels[index],color='#d0e2f6',linewidth=.5, zorder=0)
+        ax.axhline(y=y_axis_labels[index + 1],color='#d0e2f6',linewidth=.5, zorder=0)
 
     ax.set_xticks(x_axis)
     ax.set_xticklabels(x_axis_label,rotation=40,ha='right')
     ax.set_yticks(y_axis_labels)
     ax.set_yticklabels(y_axis_labels)
-
 
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
@@ -579,7 +578,7 @@ def trelloSprintBurndown(event, context):
 
                         team_members = json.loads(powerup_data)['team_member_list']
 
-                        is_show_team_size = eval(json.loads(powerup_data)['is_show_team_size'])
+                        is_show_team_size = eval(json.loads(powerup_data).get('is_show_team_size', 'False'))
 
                         team_members_days_ooo = json.loads(powerup_data)['team_members_days_ooo']
 
