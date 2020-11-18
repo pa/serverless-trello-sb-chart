@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 from __future__ import print_function
 import os
-import re
 import json
 import boto3
 import requests
@@ -14,9 +13,8 @@ import matplotlib.pyplot as plt
 from trello import TrelloClient
 from trello import Organization
 from trello import Board
-from trello import List
-from difflib import SequenceMatcher
 from botocore.exceptions import ClientError
+from retry import retry
 
 
 # Get the SSM Parameter Keys
@@ -87,13 +85,13 @@ def get_plugin_id(client, board_id):
     :param board_id: The ID of the Board
     :return: returns Plugin/PowerUp Value
     """
-    plugins =  client.fetch_json(
+    plugins = client.fetch_json(
         f"boards/{board_id}/plugins",
         http_method="GET",
-        headers = {
+        headers={
                 "Accept": "application/json"
-        },
-    )
+                },
+        )
 
     for plugin in plugins:
         if plugin['name'] == POWERUP_NAME:
@@ -111,13 +109,14 @@ def enabled_powerups(client, board_id):
     return client.fetch_json(
         f"boards/{board_id}/boardPlugins",
         http_method="GET",
-        headers = {
+        headers={
                 "Accept": "application/json"
             }
-    )
+        )
 
 
 # Get PowerUp Data that is required for monitoring the Board
+@retry(tries=3, delay=11)
 def get_powerup_data(client, board_id):
     """
     Get PowerUp Data from the board
@@ -126,7 +125,6 @@ def get_powerup_data(client, board_id):
     :return: returns PowerUp Data for monitoring boards
     """
     # Get Enabled PowerUps in the Board
-    enabled_powerups_list = []
     enabled_powerups_data = enabled_powerups(client, board_id)
     plugin_id = get_plugin_id(client, board_id)
 
@@ -136,12 +134,12 @@ def get_powerup_data(client, board_id):
             plugin_data = client.fetch_json(
                 f"boards/{board_id}/pluginData",
                 http_method="GET",
-                headers = {
-                        "Accept": "application/json"
-                },
+                headers={
+                    "Accept": "application/json"
+                    },
                 query_params={
                     'idPlugin': plugin_id
-                }
+                    }
             )
 
             return plugin_data[0]['value']
@@ -175,6 +173,7 @@ def create_existing_boards_hook(client, existing_webhooks):
 
 
 # Create Webhook for New Organization Boards
+@retry(tries=3, delay=11)
 def create_new_board_hook(client, payload, existing_webhooks):
     """
     Create Webhooks for Organization Boards
@@ -184,23 +183,21 @@ def create_new_board_hook(client, payload, existing_webhooks):
     :return: returns status of the Webhook Creation
     """
     is_create_board_webhook = False
-    try:
-        for webhook in existing_webhooks:
-            # Check is webhook created for Organization ID
-            if webhook.callback_url == CALLBACK_URL and webhook.id_model == payload['action']['data']['board']['id']:
-                is_create_board_webhook = False
-                break
-            else:
-                is_create_board_webhook = True
-        if bool(is_create_board_webhook):
-            if payload['action']['type'] == "addToOrganizationBoard":
-                return client.create_hook(CALLBACK_URL, payload['action']['data']['board']['id'], f"{payload['action']['data']['board']['name']} Trello Board Webhook", TRELLO_TOKEN)
-    except Exception as e:
-        print(f"{e}: Error creating webhook for the Trello Board ID - {payload['action']['data']['board']['name']}")
+    for webhook in existing_webhooks:
+        # Check is webhook created for Organization ID
+        if webhook.callback_url == CALLBACK_URL and webhook.id_model == payload['action']['data']['board']['id']:
+            is_create_board_webhook = False
+            break
+        else:
+            is_create_board_webhook = True
+    if bool(is_create_board_webhook):
+        if payload['action']['type'] == "addToOrganizationBoard":
+            return client.create_hook(CALLBACK_URL, payload['action']['data']['board']['id'], f"{payload['action']['data']['board']['name']} Trello Board Webhook", TRELLO_TOKEN)
 
 
 # Get Stories and Tasks Counts
-def get_counts(client, payload, monitor_lists, start_day):
+@retry(tries=3, delay=11)
+def get_counts(client, payload, monitor_lists, done_list, start_day):
     """
     Get List data
     :param client: Trello client Object
@@ -215,34 +212,26 @@ def get_counts(client, payload, monitor_lists, start_day):
     ideal_tasks_remaining = 0
 
     board_object = Board(client, board_id=payload['action']['data']['board']['id'])
-    board_lists = board_object.all_lists()
+    board_cards = board_object.get_cards()
 
     for monitor_list in monitor_lists:
-        for board_list in board_lists:
-            cards_list = List(board_object, board_list.id).list_cards()
-            # Get count of Tasks and Userstory/Defect Remaining
-            if board_list.id == monitor_list:
-                for card in cards_list:
-                    if card.name[:2] in 'T ':
-                        tasks_remaining += 1
-                    elif card.name[:2] in ('U ', 'D '):
-                        stories_defects_remaining += 1
-                break
-
-    if current_day == start_day:
-        ideal_tasks_remaining = tasks_remaining
-
-    for board_list in board_lists:
-        # Get count of Userstories/Defects Done
-        if (board_list.name)[-4:] == "Done":
-            cards_list = List(board_object, board_list.id).list_cards()
-            for card in cards_list:
-                if card.name[:2] in ('U ', 'D '):
+        for board_card in board_cards:
+            if board_card.idList == monitor_list:
+                if board_card.name[:2] in 'T ':
+                    tasks_remaining += 1
+                elif board_card.name[:2] in ('U ', 'D ', 'C '):
+                    stories_defects_remaining += 1
+    else:
+        for board_card in board_cards:
+            if board_card.idList == done_list:
+                if board_card.name[:2] in ('U ', 'D ', 'C '):
                     stories_defects_done += 1
                 if current_day == start_day:
-                    if card.name[:2] in 'T ':
+                    if board_card.name[:2] in 'T ':
                         ideal_tasks_remaining += 1
-            break
+
+    if current_day == start_day:
+        ideal_tasks_remaining += tasks_remaining
 
     return stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining
 
@@ -364,9 +353,9 @@ def create_chart(sprint_data, total_sprint_days, board_id, team_members, team_me
             sprint_dates_list.append(key)
             stories_defects_remaining_list.append(value['stories_defects_remaining'])
             stories_defects_done_list.append(value['stories_defects_done'])
-            if value.get('tasks_remaining'):
+            if value.get('tasks_remaining') or value.get('tasks_remaining') == 0:
                 tasks_remaining_list.append(value['tasks_remaining'])
-            if value.get('team_size'):
+            if value.get('team_size') or value.get('team_size') == 0:
                 team_size_list.append(value['team_size'])
 
     team_size_list[0] = team_size_list[1]
@@ -380,17 +369,16 @@ def create_chart(sprint_data, total_sprint_days, board_id, team_members, team_me
     ideal_line_list = [0]
     ax.axhline(y=0,color='#d0e2f6',linewidth=.5, zorder=0)
     for index in range(0, total_sprint_days):
-        y_axis_label = y_axis_labels[index] + round(max(tasks_remaining_list)/total_sprint_days)
+        y_axis_label = y_axis_labels[index] + round((max(tasks_remaining_list)/total_sprint_days) + 0.5)
         ideal_line = ideal_line_list[index] + (ideal_tasks_remaining/total_sprint_days)
         y_axis_labels.append(y_axis_label)
         ideal_line_list.append(ideal_line)
-        ax.axhline(y=y_axis_labels[index],color='#d0e2f6',linewidth=.5, zorder=0)
+        ax.axhline(y=y_axis_labels[index + 1],color='#d0e2f6',linewidth=.5, zorder=0)
 
     ax.set_xticks(x_axis)
     ax.set_xticklabels(x_axis_label,rotation=40,ha='right')
     ax.set_yticks(y_axis_labels)
     ax.set_yticklabels(y_axis_labels)
-
 
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
@@ -437,7 +425,7 @@ def create_chart(sprint_data, total_sprint_days, board_id, team_members, team_me
     for index in range(0, len(tasks_remaining_list)):
         plt.annotate(xy=[index, tasks_remaining_list[index]], s=str(tasks_remaining_list[index]), color='#482ff7', size=6, ha='center', va='bottom', textcoords="offset points", xytext=(2, 3))
 
-    plt.title("Sprint Burndown Chart")
+    plt.title("Burndown Chart")
 
     on_team_for_sprint = ['On Team for Sprint', '\n']
 
@@ -455,6 +443,7 @@ def create_chart(sprint_data, total_sprint_days, board_id, team_members, team_me
 
 
 # Delete previously attached Chart from the card
+@retry(tries=3, delay=11)
 def delete_chart(client, card_id):
     """
     Deletes already existing Sprint Burndown chart
@@ -462,55 +451,50 @@ def delete_chart(client, card_id):
     :param card_id: The ID of the Card
     :return: returns None
     """
-    try:
-        card_attachments = client.fetch_json(
-            f"cards/{card_id}/attachments",
-            http_method="GET",
-            headers = {
-                    "Accept": "application/json"
-                }
-        )
-        for card_attachment in card_attachments:
-            if current_date in card_attachment['name']:
-                client.fetch_json(
-                        f"cards/{card_id}/attachments/{card_attachment['id']}",
-                        http_method="DELETE",
-                        headers = {
-                                "Accept": "application/json"
-                        }
-                    )
-    except Exception as error:
-        print(error)
-        pass
+    card_attachments = client.fetch_json(
+        f"cards/{card_id}/attachments",
+        http_method="GET",
+        headers = {
+                "Accept": "application/json"
+            }
+    )
+    for card_attachment in card_attachments:
+        if current_date in card_attachment['name']:
+            client.fetch_json(
+                    f"cards/{card_id}/attachments/{card_attachment['id']}",
+                    http_method="DELETE",
+                    headers = {
+                            "Accept": "application/json"
+                    }
+                )
 
 
 # Attach Chart to the Card
+@retry(tries=3, delay=11)
 def attach_chart(client, card_id, board_id):
     """
     Attaches Sprint Burndown chart to a card
     :param client: Trello client Object
     :param card_id: The ID of the Card
     :param board_id: The ID of the Board
-    :return: returns None
+    :return: returns attachment response
     """
     image_path = '/tmp/' + current_date + '_Sprint_Burndown_Chart_' + board_id + '.png'
-    try:
-        attachment_response = client.fetch_json(
-            f"cards/{card_id}/attachments",
-            http_method="POST",
-            files = {
-                'file': (current_date + '_Sprint_Burndown_Chart.png', open(image_path, 'rb')),
-            },
-            headers = {
-                    "Accept": "application/json"
-            }
-        )
+    attachment_response = client.fetch_json(
+        f"cards/{card_id}/attachments",
+        http_method="POST",
+        files = {
+            'file': (current_date + '_Sprint_Burndown_Chart.png', open(image_path, 'rb')),
+        },
+        headers = {
+                "Accept": "application/json"
+        }
+    )
 
-        # Delete Chart locally
-        os.remove(image_path)
-    except Exception as error:
-        print(error)
-        pass
+    # Delete Chart locally
+    os.remove(image_path)
+
+    return attachment_response
 
 
 # Success Status Method
@@ -541,6 +525,9 @@ def trelloSprintBurndown(event, context):
     if event:
         if current_day not in ('Saturday', 'Sunday'):
             payload = json.loads(event['payload'])
+
+            print(payload)
+
             board_id = payload['action']['data']['board']['id']
 
             # Create Webhook for new board
@@ -549,75 +536,83 @@ def trelloSprintBurndown(event, context):
                 create_new_board_hook(client, payload, existing_webhooks)
 
             if payload['action']['type'] in ('updateCard', 'createCard'):
-                # Download Sprint data and Card Attachment data files from S3
-                try:
-                    s3.Bucket(DEPLOYMENT_BUCKET).download_file(sprint_data_file_name, '/tmp/' + sprint_data_file_name)
-                except Exception as error:
-                    print(error)
-                    pass
-
                 # Get PowerUp Data
                 powerup_data = get_powerup_data(client, board_id)
 
-                # Check PowerUp Data exists
-                if powerup_data is not None:
-                    sprint_start_day = json.loads(powerup_data)['sprint_start_day']
-                    total_sprint_days = int(json.loads(powerup_data)['total_sprint_days'])
+                # Get Monitor lists
+                monitor_lists = json.loads(powerup_data)['selected_list']
 
-                    # Get monitor lists
-                    monitor_lists = json.loads(powerup_data)['selected_list']
-
-                    # Get counts of Stories/Tasks
-                    stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining = get_counts(client, payload, monitor_lists, sprint_start_day)
-
-                    print(f'Board ID: {board_id}')
-                    print(f'Stories Remaining: {stories_defects_remaining}')
-                    print(f'Stories Done: {stories_defects_done}')
-                    print(f'Tasks Remaining: {tasks_remaining}')
-                    print(f'Ideal Tasks Remaining: {ideal_tasks_remaining}')
-
-                    # Current Sprint Dates
-                    sprint_dates = get_sprint_dates(sprint_start_day, (total_sprint_days - 1), board_id)
-
-                    print(f'Start Date: {sprint_dates[0]} End Date: {sprint_dates[len(sprint_dates)-1]}')
-
-                    team_members = json.loads(powerup_data)['team_member_list']
-
-                    is_show_team_size = eval(json.loads(powerup_data)['is_show_team_size'])
-
-                    team_members_days_ooo = json.loads(powerup_data)['team_members_days_ooo']
-
-                    team_members_days_ooo = team_members_days_ooo.split(",")
-
-                    team_members_days_ooo_list = [0]
-                    for ooo_per_day in team_members_days_ooo:
-                        team_members_days_ooo_list.append(float(ooo_per_day.split("-")[1]))
-
-                    team_size = len(team_members)
-
-                    # Update sprint data
-                    sprint_data = update_sprint_data(sprint_start_day, board_id, sprint_dates, stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining, team_size)
-
-                    # Create Sprint Burndown Chart
-                    create_chart(sprint_data, total_sprint_days, board_id, team_members, team_members_days_ooo_list, is_show_team_size)
-
-                    attachment_card_id = json.loads(powerup_data)['selected_card_for_attachment']
-
-                    # Delete previously attached Chart from the card
-                    delete_chart(client, attachment_card_id)
-
-                    # Attach Chart to Card
-                    attach_chart(client, attachment_card_id, board_id)
-
-                    # Upload Sprint data and Card Attachment data files from S3
+                if (payload['action']['data'].get('listBefore', {}).get('id') in monitor_lists or
+                    payload['action']['data'].get('listAfter', {}).get('id') in monitor_lists or
+                    (payload['action'].get('display').get('translationKey') in 'action_create_card' and
+                    payload['action']['data'].get('list', {}).get('id') in monitor_lists)):
+                    # Download Sprint data and Card Attachment data files from S3
                     try:
-                        s3.Object(DEPLOYMENT_BUCKET, sprint_data_file_name).put(Body=open('/tmp/' + sprint_data_file_name, 'rb'))
+                        s3.Bucket(DEPLOYMENT_BUCKET).download_file(sprint_data_file_name, '/tmp/' + sprint_data_file_name)
                     except Exception as error:
                         print(error)
                         pass
 
-                    # Return Success
-                    success()
+                    # Check PowerUp Data exists
+                    if powerup_data is not None:
+                        sprint_start_day = json.loads(powerup_data)['sprint_start_day']
+
+                        total_sprint_days = int(json.loads(powerup_data)['total_sprint_days'])
+
+                        # Get Done lists
+                        done_list = json.loads(powerup_data)['selected_done_list']
+
+                        # Get counts of Stories/Tasks
+                        stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining = get_counts(client, payload, monitor_lists, done_list, sprint_start_day)
+
+                        print(f'Board ID: {board_id}')
+                        print(f'Stories Remaining: {stories_defects_remaining}')
+                        print(f'Stories Done: {stories_defects_done}')
+                        print(f'Tasks Remaining: {tasks_remaining}')
+                        print(f'Ideal Tasks Remaining: {ideal_tasks_remaining}')
+
+                        # Current Sprint Dates
+                        sprint_dates = get_sprint_dates(sprint_start_day, (total_sprint_days - 1), board_id)
+
+                        print(f'Start Date: {sprint_dates[0]} End Date: {sprint_dates[len(sprint_dates)-1]}')
+
+                        team_members = json.loads(powerup_data)['team_member_list']
+
+                        is_show_team_size = eval(json.loads(powerup_data).get('is_show_team_size', 'False'))
+
+                        team_members_days_ooo = json.loads(powerup_data)['team_members_days_ooo']
+
+                        team_members_days_ooo = team_members_days_ooo.split(",")
+
+                        team_members_days_ooo_list = [0]
+                        for ooo_per_day in team_members_days_ooo:
+                            team_members_days_ooo_list.append(float(ooo_per_day.split("-")[1]))
+
+                        team_size = len(team_members)
+
+                        # Update sprint data
+                        sprint_data = update_sprint_data(sprint_start_day, board_id, sprint_dates, stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining, team_size)
+
+                        # Create Sprint Burndown Chart
+                        create_chart(sprint_data, total_sprint_days, board_id, team_members, team_members_days_ooo_list, is_show_team_size)
+
+                        attachment_card_id = json.loads(powerup_data)['selected_card_for_attachment']
+
+                        # Delete previously attached Chart from the card
+                        delete_chart(client, attachment_card_id)
+
+                        # Attach Chart to Card
+                        attach_chart(client, attachment_card_id, board_id)
+
+                        # Upload Sprint data and Card Attachment data files from S3
+                        try:
+                            s3.Object(DEPLOYMENT_BUCKET, sprint_data_file_name).put(Body=open('/tmp/' + sprint_data_file_name, 'rb'))
+                        except Exception as error:
+                            print(error)
+                            pass
+
+                        # Return Success
+                        success()
     else:
         # Create Webhook for Trello Organization
         client.create_hook(CALLBACK_URL, TRELLO_ORGANIZATION_ID, "Trello Organiztion Webhook", TRELLO_TOKEN)

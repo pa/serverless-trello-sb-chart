@@ -126,7 +126,6 @@ def get_powerup_data(client, board_id):
     :return: returns PowerUp Data for monitoring boards
     """
     # Get Enabled PowerUps in the Board
-    enabled_powerups_list = []
     enabled_powerups_data = enabled_powerups(client, board_id)
     plugin_id = get_plugin_id(client, board_id)
 
@@ -148,11 +147,11 @@ def get_powerup_data(client, board_id):
 
 
 # Get Stories and Tasks Counts
-def get_counts(client, board_id, monitor_lists, start_day):
+def get_counts(client, board_id, monitor_lists, done_list, start_day):
     """
     Get List data
     :param client: Trello client Object
-    :param board_id: The ID of the Board
+    :param board_id: Trello Board ID
     :param monitor_lists: Trello monitor lists from PowerUp Data
     :param start_day: Start day of the Sprint. Eg: Monday
     :return: returns count of User Stories/Defects remaining and completed
@@ -163,34 +162,26 @@ def get_counts(client, board_id, monitor_lists, start_day):
     ideal_tasks_remaining = 0
 
     board_object = Board(client, board_id=board_id)
-    board_lists = board_object.all_lists()
+    board_cards = board_object.get_cards()
 
     for monitor_list in monitor_lists:
-        for board_list in board_lists:
-            cards_list = List(board_object, board_list.id).list_cards()
-            # Get count of Tasks and Userstory/Defect Remaining
-            if board_list.id == monitor_list:
-                for card in cards_list:
-                    if card.name[:2] in 'T ':
-                        tasks_remaining += 1
-                    elif card.name[:2] in ('U ', 'D '):
-                        stories_defects_remaining += 1
-                break
-
-    if current_day == start_day:
-        ideal_tasks_remaining = tasks_remaining
-
-    for board_list in board_lists:
-        # Get count of Userstories/Defects Done
-        if (board_list.name)[-4:] == "Done":
-            cards_list = List(board_object, board_list.id).list_cards()
-            for card in cards_list:
-                if card.name[:2] in ('U ', 'D '):
+        for board_card in board_cards:
+            if board_card.idList == monitor_list:
+                if board_card.name[:2] in 'T ':
+                    tasks_remaining += 1
+                elif board_card.name[:2] in ('U ', 'D ', 'C '):
+                    stories_defects_remaining += 1
+    else:
+        for board_card in board_cards:
+            if board_card.idList == done_list:
+                if board_card.name[:2] in ('U ', 'D ', 'C '):
                     stories_defects_done += 1
                 if current_day == start_day:
-                    if card.name[:2] in 'T ':
+                    if board_card.name[:2] in 'T ':
                         ideal_tasks_remaining += 1
-            break
+
+    if current_day == start_day:
+        ideal_tasks_remaining += tasks_remaining
 
     return stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining
 
@@ -312,9 +303,9 @@ def create_chart(sprint_data, total_sprint_days, board_id, team_members, team_me
             sprint_dates_list.append(key)
             stories_defects_remaining_list.append(value['stories_defects_remaining'])
             stories_defects_done_list.append(value['stories_defects_done'])
-            if value.get('tasks_remaining'):
+            if value.get('tasks_remaining') or value.get('tasks_remaining') == 0:
                 tasks_remaining_list.append(value['tasks_remaining'])
-            if value.get('team_size'):
+            if value.get('team_size') or value.get('team_size') == 0:
                 team_size_list.append(value['team_size'])
 
     team_size_list[0] = team_size_list[1]
@@ -328,17 +319,16 @@ def create_chart(sprint_data, total_sprint_days, board_id, team_members, team_me
     ideal_line_list = [0]
     ax.axhline(y=0,color='#d0e2f6',linewidth=.5, zorder=0)
     for index in range(0, total_sprint_days):
-        y_axis_label = y_axis_labels[index] + round(max(tasks_remaining_list)/total_sprint_days)
+        y_axis_label = y_axis_labels[index] + round((max(tasks_remaining_list)/total_sprint_days) + 0.5)
         ideal_line = ideal_line_list[index] + (ideal_tasks_remaining/total_sprint_days)
         y_axis_labels.append(y_axis_label)
         ideal_line_list.append(ideal_line)
-        ax.axhline(y=y_axis_labels[index],color='#d0e2f6',linewidth=.5, zorder=0)
+        ax.axhline(y=y_axis_labels[index + 1],color='#d0e2f6',linewidth=.5, zorder=0)
 
     ax.set_xticks(x_axis)
     ax.set_xticklabels(x_axis_label,rotation=40,ha='right')
     ax.set_yticks(y_axis_labels)
     ax.set_yticklabels(y_axis_labels)
-
 
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
@@ -385,7 +375,7 @@ def create_chart(sprint_data, total_sprint_days, board_id, team_members, team_me
     for index in range(0, len(tasks_remaining_list)):
         plt.annotate(xy=[index, tasks_remaining_list[index]], s=str(tasks_remaining_list[index]), color='#482ff7', size=6, ha='center', va='bottom', textcoords="offset points", xytext=(2, 3))
 
-    plt.title("Sprint Burndown Chart")
+    plt.title("Burndown Chart")
 
     on_team_for_sprint = ['On Team for Sprint', '\n']
 
@@ -395,9 +385,9 @@ def create_chart(sprint_data, total_sprint_days, board_id, team_members, team_me
     plt.subplots_adjust(left=0.2)
 
     if is_show_team_size:
-        plt.legend([p1,p2,p3, p4, p5, p6], ["Ideal Tasks Remaining","Tasks Remaining","Stories/Defects Remaining", "Stories/Defects Done", "Team Members OOO","Team Size"], loc=1, borderaxespad=0,fontsize=6).get_frame().set_alpha(0.5)
+        plt.legend([p1,p2,p3, p4, p5, p6], ["Ideal Tasks Remaining","Tasks Remaining","Stories/Defects Remaining", "Stories/Defects Done", "Team Members Days OOO","Team Size"], loc=1, borderaxespad=0,fontsize=6).get_frame().set_alpha(0.5)
     else:
-        plt.legend([p1,p2,p3, p4, p5], ["Ideal Tasks Remaining","Tasks Remaining","Stories/Defects Remaining", "Stories/Defects Done", "Team Members OOO"], loc=1, borderaxespad=0,fontsize=6).get_frame().set_alpha(0.5)
+        plt.legend([p1,p2,p3, p4, p5], ["Ideal Tasks Remaining","Tasks Remaining","Stories/Defects Remaining", "Stories/Defects Done", "Team Members Days OOO"], loc=1, borderaxespad=0,fontsize=6).get_frame().set_alpha(0.5)
 
     plt.savefig('/tmp/' + current_date + '_Sprint_Burndown_Chart_' + board_id, dpi=150)
 
@@ -511,8 +501,11 @@ def trelloSprintBurndown(event, context):
                     # Get monitor lists
                     monitor_lists = json.loads(powerup_data)['selected_list']
 
+                    # Get Done lists
+                    done_list = json.loads(powerup_data)['selected_done_list']
+
                     # Get counts of Stories/Tasks
-                    stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining = get_counts(client, board.id, monitor_lists, sprint_start_day)
+                    stories_defects_remaining, stories_defects_done, tasks_remaining, ideal_tasks_remaining = get_counts(client, board.id, monitor_lists, done_list, sprint_start_day)
 
                     print(f'Board ID: {board.id}')
                     print(f'Stories Remaining: {stories_defects_remaining}')
@@ -527,7 +520,7 @@ def trelloSprintBurndown(event, context):
 
                     team_members = json.loads(powerup_data)['team_member_list']
 
-                    is_show_team_size = eval(json.loads(powerup_data)['is_show_team_size'])
+                    is_show_team_size = eval(json.loads(powerup_data).get('is_show_team_size', 'False'))
 
                     team_members_days_ooo = json.loads(powerup_data)['team_members_days_ooo']
 

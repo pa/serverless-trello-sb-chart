@@ -146,6 +146,41 @@ $('#selectEvents').on('select2:unselect', function (e) {
 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////   Pick the Done List   //////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+//Setting Done List whenever the page reloads
+t.get('board', 'shared', 'selected_done_list').then(function (lists) {
+  $('#doneCardEvents').val(lists).change()
+});
+
+//Adding Done Lists to DropDown options
+t.lists('all')
+    .then(function (lists) {
+
+      for (var list_index in lists) {
+        if( lists[list_index]['name'].match(/Done/g))
+           {
+             var newOption = new Option(lists[list_index].name, lists[list_index].id, false, false);
+             $('#doneCardEvents').append(newOption).trigger('change');
+           }
+      }
+});
+
+//Adding placeholder to the DropDown List
+selected_cards_list = $("#doneCardEvents").select2({
+    placeholder: "Pick the Done List",
+});
+
+//Picking Done List from DropDown List
+$('#doneCardEvents').on('select2:select', function (e) {
+  plugin_data['selected_done_list'] = e.params.data.id
+});
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////   Team Members List   ///////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
