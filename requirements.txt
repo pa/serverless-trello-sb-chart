@@ -1,5 +1,5 @@
 requests
 py-trello
 matplotlib
-pytz
+pytz==2020.1
 retry
